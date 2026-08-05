@@ -254,6 +254,15 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 .cat-item .acts .del-btn:hover{color:var(--danger);background:var(--danger-soft)}
 
 
+
+.tipo-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;letter-spacing:.03em;text-transform:uppercase;margin-right:6px;vertical-align:middle}
+.tipo-badge.unica{background:var(--bg);color:var(--ink-soft);border:1px solid var(--line)}
+.tipo-badge.fixa{background:var(--amber-soft);color:var(--amber)}
+.tipo-badge.recorrente{background:#e1eef9;color:var(--blue)}
+.tipo-tabs{display:flex;gap:4px;padding:4px;background:var(--card);border:1px solid var(--line);border-radius:11px;margin-bottom:4px}
+.tipo-tabs button{flex:1;background:transparent;border:none;padding:8px;border-radius:8px;font-family:'Manrope';font-weight:600;font-size:13px;color:var(--ink-soft);cursor:pointer;transition:.15s}
+.tipo-tabs button.active{background:var(--accent-soft);color:var(--accent-dark)}
+.divida-item .mid .totalcalc{color:var(--ink-soft);font-size:11.5px;display:block;margin-top:2px}
 .divida-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
 .divida-summary .item{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
 .divida-summary .item small{display:block;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
@@ -963,12 +972,25 @@ function wireRelatorios(){
 }
 function renderDivida(d,uid,isCredor){
   const podeEditar=(d.user_id===uid)&&!isCredor;
-  const venc=d.vencimento?`venc: ${brDate(d.vencimento)}`:"";
+  const tipo=d.tipo_divida||"unica";
+  const badge=`<span class="tipo-badge ${tipo}">${tipo==="unica"?"única":tipo}</span>`;
+  // período
+  let periodo="";
+  if(tipo==="unica"){periodo=d.mes_inicio?fmtMes(d.mes_inicio):"";}
+  else if(d.mes_inicio && d.mes_fim){const n=mesesEntre(d.mes_inicio,d.mes_fim);periodo=`${fmtMes(d.mes_inicio)} → ${fmtMes(d.mes_fim)}${n?" ("+n+" meses)":""}`;}
+  else if(d.mes_inicio){periodo=`desde ${fmtMes(d.mes_inicio)}`;}
+  // total calculado (só pra fixa com período)
+  let totalCalc="";
+  if(tipo==="fixa" && d.mes_inicio && d.mes_fim){
+    const n=mesesEntre(d.mes_inicio,d.mes_fim);
+    if(n && n>1){totalCalc=`<span class="totalcalc">${fmt(d.valor)}/mês × ${n} = ${fmt(d.valor*n)} total</span>`;}
+  }else if(tipo==="recorrente"){
+    totalCalc=`<span class="totalcalc">~${fmt(d.valor)}/mês (variável)</span>`;
+  }
   const pagoStr=(d.pago&&d.data_pagto)?`pago em ${brDate(d.data_pagto)}`:"";
-  const dataStr=d.data?brDate(d.data):"";
-  const meta=[d.credor_nome,dataStr,venc,pagoStr,d.observacao].filter(Boolean).join(" · ");
+  const meta=[d.credor_nome,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
   return `<div class="divida-item ${d.pago?"pago":""}">
-    <div class="mid"><b>${d.descricao}</b><small>${meta}</small></div>
+    <div class="mid"><b>${badge}${d.descricao}</b><small>${meta}</small>${totalCalc}</div>
     <b class="val">${fmt(d.valor)}</b>
     ${podeEditar?`<div class="acts">
       ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar">↺</button>`:`<button data-div-pago="${d.id}" title="Marcar como pago">✓</button>`}
@@ -976,13 +998,17 @@ function renderDivida(d,uid,isCredor){
     </div>`:""}
   </div>`;
 }
+function fmtMes(ym){if(!ym)return"";const p=ym.split("-");if(p.length<2)return"";return MESES[+p[1]-1].toLowerCase()+"/"+p[0].slice(-2);}
+function mesesEntre(ini,fim){if(!ini||!fim)return null;const [iy,im]=ini.split("-").map(Number);const [fy,fm]=fim.split("-").map(Number);return (fy-iy)*12+(fm-im)+1;}
 function viewDividas(){
   const uid=session.user.id;
   const minhas=dividas.filter(d=>d.user_id===uid);
   const paraMim=dividas.filter(d=>d.user_id!==uid);
   const isCredor=paraMim.length>0 && minhas.length===0;
   const list=isCredor?paraMim:minhas;
-  const pend=list.filter(d=>!d.pago).sort((a,b)=>(a.vencimento||a.data||"").localeCompare(b.vencimento||b.data||""));
+  // ordena por mes_inicio (mais recente primeiro) com fallback pra data
+  const sortKey=d=>d.mes_inicio||(d.data||"").slice(0,7);
+  const pend=list.filter(d=>!d.pago).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
   const pagos=list.filter(d=>d.pago).sort((a,b)=>(b.data_pagto||"").localeCompare(a.data_pagto||""));
   const totalPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
   const totalPago=pagos.reduce((s,d)=>s+(+d.valor||0),0);
@@ -991,12 +1017,17 @@ function viewDividas(){
   const defNome=ultima.credor_nome||"Talita";
   const defEmail=ultima.credor_email||"";
   const adding=window._addingDiv;
+  const tipoSel=window._divTipo||"unica";
+  const now=new Date();
+  const mesAtual=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   const notice=isCredor
     ?`<div class="card wide"><div class="divida-notice">Você está vendo dívidas cadastradas com o seu email. As outras abas do app são seu espaço pessoal — pode ignorar se entrou aqui só pra acompanhar essas dívidas.</div></div>`
     :"";
   const noticeVazio=(!isCredor && minhas.length===0)
     ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas com Talita (luz, água, cartão, parcelas). Coloque o email dela em "Credor (email)" — quando ela criar conta no app com esse mesmo email, ela vai ver essas dívidas.</div></div>`
     :"";
+  const labelValor=tipoSel==="unica"?"Valor da dívida (R$)":(tipoSel==="fixa"?"Valor por parcela (R$)":"Valor médio por mês (R$)");
+  const showMesFim=tipoSel!=="unica";
   return `<div class="grid">
     ${notice}${noticeVazio}
     <div class="card wide">
@@ -1009,13 +1040,18 @@ function viewDividas(){
     </div>
     ${(adding && !isCredor)?`
     <div class="card wide"><h3>Nova dívida</h3>
+      <div class="tipo-tabs" style="max-width:420px;margin-bottom:16px">
+        <button data-tipo-div="unica" class="${tipoSel==="unica"?"active":""}">Única</button>
+        <button data-tipo-div="fixa" class="${tipoSel==="fixa"?"active":""}">Fixa (parcelada)</button>
+        <button data-tipo-div="recorrente" class="${tipoSel==="recorrente"?"active":""}">Recorrente</button>
+      </div>
       <div class="form">
         <label>Credor (nome)<input id="dv_credorNome" value="${defNome}"></label>
         <label>Credor (email) <span style="font-weight:400;font-style:italic;font-size:11px">pra ela poder ver</span><input id="dv_credorEmail" type="email" value="${defEmail}" placeholder="email@exemplo.com"></label>
-        <label>Descrição<input id="dv_desc" placeholder="Ex: conta de luz de nov, parcela cartão"></label>
-        <label>Valor (R$)<input id="dv_valor" type="number" inputmode="decimal" placeholder="0,00"></label>
-        <label>Data (quando surgiu)<input id="dv_data" type="date" value="${hoje()}"></label>
-        <label>Vencimento (opcional)<input id="dv_venc" type="date"></label>
+        <label class="wide">Descrição<input id="dv_desc" placeholder="Ex: conta de luz de nov, parcela cartão Nubank"></label>
+        <label>${labelValor}<input id="dv_valor" type="number" inputmode="decimal" placeholder="0,00"></label>
+        <label>Mês de entrada<input id="dv_mesIni" type="month" value="${mesAtual}"></label>
+        ${showMesFim?`<label>Mês final ${tipoSel==="recorrente"?'<span style="font-weight:400;font-style:italic;font-size:11px">opcional se não tem fim</span>':''}<input id="dv_mesFim" type="month"></label>`:""}
         <label class="wide">Observação (opcional)<input id="dv_obs" placeholder="qualquer detalhe extra"></label>
         <button class="btn-add" id="btnSalvarDiv">+ Salvar dívida</button>
       </div>
@@ -1028,20 +1064,26 @@ function viewDividas(){
 }
 function wireDividas(){
   const btnNova=document.getElementById("btnNovaDiv");
-  if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;render();};
+  if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;window._divTipo=window._divTipo||"unica";render();};
+  document.querySelectorAll("[data-tipo-div]").forEach(b=>b.onclick=()=>{window._divTipo=b.dataset.tipoDiv;render();});
   const btnSalvar=document.getElementById("btnSalvarDiv");
   if(btnSalvar)btnSalvar.onclick=async()=>{
     const credor_nome=document.getElementById("dv_credorNome").value.trim()||"Credor";
     const credor_email=document.getElementById("dv_credorEmail").value.trim().toLowerCase();
     const descricao=document.getElementById("dv_desc").value.trim();
     const valor=parseFloat((document.getElementById("dv_valor").value||"").replace(",","."));
-    const data=document.getElementById("dv_data").value||hoje();
-    const vencimento=document.getElementById("dv_venc").value||null;
+    const tipo_divida=window._divTipo||"unica";
+    const mes_inicio=document.getElementById("dv_mesIni").value||null;
+    const mesFimEl=document.getElementById("dv_mesFim");
+    let mes_fim=mesFimEl?(mesFimEl.value||null):null;
+    if(tipo_divida==="unica")mes_fim=mes_inicio;
     const observacao=document.getElementById("dv_obs").value.trim()||null;
     if(!credor_email){alert("Coloque o email do credor.");return;}
     if(!descricao){alert("Coloque uma descrição.");return;}
     if(!valor||valor<=0){alert("Coloque um valor válido.");return;}
-    await ins("dividas",{credor_nome,credor_email,descricao,valor,data,vencimento,observacao});
+    if(!mes_inicio){alert("Escolha o mês de entrada.");return;}
+    if(tipo_divida==="fixa" && !mes_fim){alert("Fixa precisa do mês final pra saber quantas parcelas.");return;}
+    await ins("dividas",{credor_nome,credor_email,descricao,valor,tipo_divida,mes_inicio,mes_fim,observacao});
     window._addingDiv=false;
     await loadAll();
   };
