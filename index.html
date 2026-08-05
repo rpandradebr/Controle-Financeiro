@@ -263,6 +263,24 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 .tipo-tabs button{flex:1;background:transparent;border:none;padding:8px;border-radius:8px;font-family:'Manrope';font-weight:600;font-size:13px;color:var(--ink-soft);cursor:pointer;transition:.15s}
 .tipo-tabs button.active{background:var(--accent-soft);color:var(--accent-dark)}
 .divida-item .mid .totalcalc{color:var(--ink-soft);font-size:11.5px;display:block;margin-top:2px}
+
+.divida-item.contest{border-left-color:var(--amber);background:#fefbf3}
+.divida-item .contest-badge{display:inline-block;background:var(--amber-soft);color:var(--amber);font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;margin-top:6px}
+.divida-item .contest-badge small{display:block;font-weight:500;font-size:10.5px;margin-top:1px;font-style:italic;color:var(--amber)}
+.divida-subgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.divida-subgrid .item{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px;text-align:center}
+.divida-subgrid .item small{display:block;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.divida-subgrid .item b{font-family:'Fraunces',serif;font-size:17px}
+.divida-subgrid .item.pend b{color:var(--danger)}
+.divida-subgrid .item.paga b{color:var(--accent-dark)}
+.divida-subgrid .item.cont b{color:var(--amber)}
+.mes-picker{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:16px}
+.mes-picker button{width:34px;height:34px;border-radius:50%;background:var(--card);border:1px solid var(--line);font-size:18px;color:var(--ink);cursor:pointer;line-height:1}
+.mes-picker button:hover{border-color:var(--accent)}
+.mes-picker .lbl{text-align:center;min-width:130px}
+.mes-picker .lbl b{display:block;font-family:'Fraunces',serif;font-size:19px}
+.mes-picker .lbl small{color:var(--ink-soft);font-size:11px}
+@media(max-width:520px){.divida-subgrid{grid-template-columns:repeat(2,1fr)}}
 .divida-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
 .divida-summary .item{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
 .divida-summary .item small{display:block;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
@@ -974,12 +992,10 @@ function renderDivida(d,uid,isCredor){
   const podeEditar=(d.user_id===uid)&&!isCredor;
   const tipo=d.tipo_divida||"unica";
   const badge=`<span class="tipo-badge ${tipo}">${tipo==="unica"?"única":tipo}</span>`;
-  // período
   let periodo="";
   if(tipo==="unica"){periodo=d.mes_inicio?fmtMes(d.mes_inicio):"";}
   else if(d.mes_inicio && d.mes_fim){const n=mesesEntre(d.mes_inicio,d.mes_fim);periodo=`${fmtMes(d.mes_inicio)} → ${fmtMes(d.mes_fim)}${n?" ("+n+" meses)":""}`;}
   else if(d.mes_inicio){periodo=`desde ${fmtMes(d.mes_inicio)}`;}
-  // total calculado (só pra fixa com período)
   let totalCalc="";
   if(tipo==="fixa" && d.mes_inicio && d.mes_fim){
     const n=mesesEntre(d.mes_inicio,d.mes_fim);
@@ -989,30 +1005,33 @@ function renderDivida(d,uid,isCredor){
   }
   const pagoStr=(d.pago&&d.data_pagto)?`pago em ${brDate(d.data_pagto)}`:"";
   const meta=[d.credor_nome,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
-  return `<div class="divida-item ${d.pago?"pago":""}">
-    <div class="mid"><b>${badge}${d.descricao}</b><small>${meta}</small>${totalCalc}</div>
+  const contestBadge=d.contestada?`<div class="contest-badge">⚠ contestada${d.motivo_contestacao?`<small>"${d.motivo_contestacao}"</small>`:""}</div>`:"";
+  const stateCls=d.pago?"pago":(d.contestada?"contest":"");
+  return `<div class="divida-item ${stateCls}">
+    <div class="mid"><b>${badge}${d.descricao}</b><small>${meta}</small>${totalCalc}${contestBadge}</div>
     <b class="val">${fmt(d.valor)}</b>
     ${podeEditar?`<div class="acts">
-      ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar">↺</button>`:`<button data-div-pago="${d.id}" title="Marcar como pago">✓</button>`}
+      ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar baixa">↺</button>`:`<button data-div-pago="${d.id}" title="Dar baixa (pago)">✓</button>`}
+      ${d.contestada?`<button data-div-descontest="${d.id}" title="Remover contestação">✕⚠</button>`:`<button data-div-contest="${d.id}" title="Contestar essa dívida">⚠</button>`}
       <button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>
     </div>`:""}
   </div>`;
 }
 function fmtMes(ym){if(!ym)return"";const p=ym.split("-");if(p.length<2)return"";return MESES[+p[1]-1].toLowerCase()+"/"+p[0].slice(-2);}
 function mesesEntre(ini,fim){if(!ini||!fim)return null;const [iy,im]=ini.split("-").map(Number);const [fy,fm]=fim.split("-").map(Number);return (fy-iy)*12+(fm-im)+1;}
+function dividaAtivaNoMes(d,mesRef){
+  if(!d.mes_inicio)return false;
+  if(d.tipo_divida==="unica"||!d.tipo_divida)return d.mes_inicio===mesRef;
+  const fim=d.mes_fim||"9999-12";
+  return d.mes_inicio<=mesRef && mesRef<=fim;
+}
 function viewDividas(){
   const uid=session.user.id;
   const minhas=dividas.filter(d=>d.user_id===uid);
   const paraMim=dividas.filter(d=>d.user_id!==uid);
   const isCredor=paraMim.length>0 && minhas.length===0;
   const list=isCredor?paraMim:minhas;
-  // ordena por mes_inicio (mais recente primeiro) com fallback pra data
-  const sortKey=d=>d.mes_inicio||(d.data||"").slice(0,7);
-  const pend=list.filter(d=>!d.pago).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
-  const pagos=list.filter(d=>d.pago).sort((a,b)=>(b.data_pagto||"").localeCompare(a.data_pagto||""));
-  const totalPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
-  const totalPago=pagos.reduce((s,d)=>s+(+d.valor||0),0);
-  const totalGeral=totalPend+totalPago;
+  const modo=window._divModo||"todas";
   const ultima=minhas[0]||{};
   const defNome=ultima.credor_nome||"Talita";
   const defEmail=ultima.credor_email||"";
@@ -1020,25 +1039,21 @@ function viewDividas(){
   const tipoSel=window._divTipo||"unica";
   const now=new Date();
   const mesAtual=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  const mesRef=window._divMesRef||mesAtual;
   const notice=isCredor
     ?`<div class="card wide"><div class="divida-notice">Você está vendo dívidas cadastradas com o seu email. As outras abas do app são seu espaço pessoal — pode ignorar se entrou aqui só pra acompanhar essas dívidas.</div></div>`
     :"";
   const noticeVazio=(!isCredor && minhas.length===0)
     ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas com Talita (luz, água, cartão, parcelas). Coloque o email dela em "Credor (email)" — quando ela criar conta no app com esse mesmo email, ela vai ver essas dívidas.</div></div>`
     :"";
+  const modoTabs=`<div class="tipo-tabs" style="max-width:340px;margin:0 auto 16px">
+    <button data-div-modo="todas" class="${modo==="todas"?"active":""}">Todas</button>
+    <button data-div-modo="mensal" class="${modo==="mensal"?"active":""}">Relatório mensal</button>
+  </div>`;
+  const btnNova=!isCredor?`<button class="btn-ghost" id="btnNovaDiv">${adding?"× Cancelar":"+ Nova dívida"}</button>`:"";
   const labelValor=tipoSel==="unica"?"Valor da dívida (R$)":(tipoSel==="fixa"?"Valor por parcela (R$)":"Valor médio por mês (R$)");
   const showMesFim=tipoSel!=="unica";
-  return `<div class="grid">
-    ${notice}${noticeVazio}
-    <div class="card wide">
-      <div class="divida-summary">
-        <div class="item"><small>Total</small><b>${fmt(totalGeral)}</b></div>
-        <div class="item pend"><small>Pendente</small><b>${fmt(totalPend)}</b></div>
-        <div class="item paga"><small>Já pago</small><b>${fmt(totalPago)}</b></div>
-      </div>
-      ${!isCredor?`<button class="btn-ghost" id="btnNovaDiv">${adding?"× Cancelar":"+ Nova dívida"}</button>`:""}
-    </div>
-    ${(adding && !isCredor)?`
+  const formNova=(adding && !isCredor)?`
     <div class="card wide"><h3>Nova dívida</h3>
       <div class="tipo-tabs" style="max-width:420px;margin-bottom:16px">
         <button data-tipo-div="unica" class="${tipoSel==="unica"?"active":""}">Única</button>
@@ -1055,14 +1070,82 @@ function viewDividas(){
         <label class="wide">Observação (opcional)<input id="dv_obs" placeholder="qualquer detalhe extra"></label>
         <button class="btn-add" id="btnSalvarDiv">+ Salvar dívida</button>
       </div>
-    </div>`:""}
+    </div>`:"";
+
+  if(modo==="mensal"){
+    // relatório do mês selecionado
+    const ativas=list.filter(d=>dividaAtivaNoMes(d,mesRef));
+    const totalPrev=ativas.reduce((s,d)=>s+(+d.valor||0),0);
+    const pagas=ativas.filter(d=>d.pago);
+    const contest=ativas.filter(d=>!d.pago && d.contestada);
+    const pend=ativas.filter(d=>!d.pago && !d.contestada);
+    const totPago=pagas.reduce((s,d)=>s+(+d.valor||0),0);
+    const totContest=contest.reduce((s,d)=>s+(+d.valor||0),0);
+    const totPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
+    // navegador de mês
+    const [yr,mn]=mesRef.split("-").map(Number);
+    return `<div class="grid">
+      ${notice}${noticeVazio}
+      <div class="card wide">${modoTabs}
+        <div class="mes-picker">
+          <button id="btnMesPrev">‹</button>
+          <div class="lbl"><b>${MESES_L[mn-1]}</b><small>${yr}</small></div>
+          <button id="btnMesNext">›</button>
+        </div>
+        <div class="divida-subgrid">
+          <div class="item"><small>Previsto</small><b>${fmt(totalPrev)}</b></div>
+          <div class="item paga"><small>Já pago</small><b>${fmt(totPago)}</b></div>
+          <div class="item pend"><small>A pagar</small><b>${fmt(totPend)}</b></div>
+          <div class="item cont"><small>Contestado</small><b>${fmt(totContest)}</b></div>
+        </div>
+        ${btnNova}
+      </div>
+      ${formNova}
+      <div class="card wide"><h3>Dívidas que caem em ${MESES_L[mn-1]}/${yr}</h3>
+        ${ativas.length===0?'<div class="empty">Nenhuma dívida ativa nesse mês.</div>':`
+        ${pend.length?`<div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin:8px 0 6px">A pagar</div>${pend.map(d=>renderDivida(d,uid,isCredor)).join("")}`:""}
+        ${contest.length?`<div style="font-size:12px;color:var(--amber);font-weight:600;margin:14px 0 6px">Em contestação</div>${contest.map(d=>renderDivida(d,uid,isCredor)).join("")}`:""}
+        ${pagas.length?`<div style="font-size:12px;color:var(--accent-dark);font-weight:600;margin:14px 0 6px">Já pagas</div>${pagas.map(d=>renderDivida(d,uid,isCredor)).join("")}`:""}
+        `}
+      </div>
+    </div>`;
+  }
+  // modo Todas (geral)
+  const sortKey=d=>d.mes_inicio||(d.data||"").slice(0,7);
+  const pend=list.filter(d=>!d.pago && !d.contestada).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
+  const contest=list.filter(d=>!d.pago && d.contestada).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
+  const pagos=list.filter(d=>d.pago).sort((a,b)=>(b.data_pagto||"").localeCompare(a.data_pagto||""));
+  const totPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
+  const totCont=contest.reduce((s,d)=>s+(+d.valor||0),0);
+  const totPago=pagos.reduce((s,d)=>s+(+d.valor||0),0);
+  const totGeral=totPend+totCont+totPago;
+  return `<div class="grid">
+    ${notice}${noticeVazio}
+    <div class="card wide">${modoTabs}
+      <div class="divida-subgrid">
+        <div class="item"><small>Total</small><b>${fmt(totGeral)}</b></div>
+        <div class="item pend"><small>Pendente</small><b>${fmt(totPend)}</b></div>
+        <div class="item cont"><small>Contestado</small><b>${fmt(totCont)}</b></div>
+        <div class="item paga"><small>Já pago</small><b>${fmt(totPago)}</b></div>
+      </div>
+      ${btnNova}
+    </div>
+    ${formNova}
     <div class="card wide"><h3>Pendentes</h3>
       ${pend.length===0?'<div class="empty">Nenhuma dívida pendente.</div>':pend.map(d=>renderDivida(d,uid,isCredor)).join("")}
     </div>
+    ${contest.length>0?`<div class="card wide"><h3>Em contestação</h3>${contest.map(d=>renderDivida(d,uid,isCredor)).join("")}</div>`:""}
     ${pagos.length>0?`<div class="card wide"><h3>Já pagas</h3>${pagos.map(d=>renderDivida(d,uid,isCredor)).join("")}</div>`:""}
   </div>`;
 }
 function wireDividas(){
+  // toggle modo Todas / Relatório mensal
+  document.querySelectorAll("[data-div-modo]").forEach(b=>b.onclick=()=>{window._divModo=b.dataset.divModo;render();});
+  // navegador de mês (modo mensal)
+  const stepMes=(delta)=>{const [y,m]=(window._divMesRef||(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"))).split("-").map(Number);let ny=y,nm=m+delta;if(nm<1){nm=12;ny--;}else if(nm>12){nm=1;ny++;}window._divMesRef=ny+"-"+String(nm).padStart(2,"0");render();};
+  const bp=document.getElementById("btnMesPrev");if(bp)bp.onclick=()=>stepMes(-1);
+  const bn=document.getElementById("btnMesNext");if(bn)bn.onclick=()=>stepMes(1);
+  // botão nova dívida
   const btnNova=document.getElementById("btnNovaDiv");
   if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;window._divTipo=window._divTipo||"unica";render();};
   document.querySelectorAll("[data-tipo-div]").forEach(b=>b.onclick=()=>{window._divTipo=b.dataset.tipoDiv;render();});
@@ -1087,6 +1170,18 @@ function wireDividas(){
     window._addingDiv=false;
     await loadAll();
   };
+  // contestar
+  document.querySelectorAll("[data-div-contest]").forEach(b=>b.onclick=async()=>{
+    const motivo=prompt("Por que você está contestando essa dívida? (será visível pra Talita)");
+    if(motivo===null)return;
+    await upd("dividas",b.dataset.divContest,{contestada:true,motivo_contestacao:motivo.trim()||null});
+    await loadAll();
+  });
+  document.querySelectorAll("[data-div-descontest]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("Remover a contestação dessa dívida?"))return;
+    await upd("dividas",b.dataset.divDescontest,{contestada:false,motivo_contestacao:null});
+    await loadAll();
+  });
   document.querySelectorAll("[data-div-pago]").forEach(b=>b.onclick=async()=>{
     await upd("dividas",b.dataset.divPago,{pago:true,data_pagto:hoje()});
     await loadAll();
