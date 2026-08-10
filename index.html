@@ -1197,7 +1197,11 @@ function viewDividas(){
           <div class="item paga"><small>A receber no mês</small><b>${fmt(totRecMes)}</b></div>
           <div class="item" style="grid-column:span 2;background:linear-gradient(135deg,#f7f5ef,#f0ede3);border:1px solid var(--line)"><small>Consolidado</small><b style="font-size:15px;font-weight:600;line-height:1.4">${saldoMesTxt}</b></div>
         </div>
-        <button class="btn-ghost" id="btnImprimirRel">🖨 Imprimir / Salvar como PDF</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-ghost" id="btnImprimirRel">🖨 Imprimir / PDF</button>
+          <button class="btn-add" id="btnBaixaMes" style="height:38px">✓ Dar baixa no mês</button>
+          <button class="btn-danger" id="btnLimpaMes">🗑 Excluir tudo do mês</button>
+        </div>
       </div>
       <div class="card wide" id="rel-print-area">
         <h3>Relatório de ${MESES_L[mn-1]}/${yr}</h3>
@@ -1220,7 +1224,10 @@ function viewDividas(){
         <div class="item paga"><small>A receber</small><b>${fmt(totalAReceber)}</b></div>
         <div class="item" style="grid-column:span 2;background:linear-gradient(135deg,#f7f5ef,#f0ede3);border:1px solid var(--line)"><small>Consolidado</small><b style="font-size:15px;font-weight:600;line-height:1.4">${saldoTxt}</b></div>
       </div>
-      ${btnNova}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${btnNova}
+        ${dividas.length>0?'<button class="btn-danger" id="btnLimpaTudo">🗑 Excluir tudo</button>':""}
+      </div>
     </div>
     ${formNova}
     ${renderBlocoDividas("→ Contas a pagar (você deve pra "+outroLabel+")",aPagar,"pagar",uid)}
@@ -1233,6 +1240,44 @@ function wireDividas(){
   const bp=document.getElementById("btnMesPrev");if(bp)bp.onclick=()=>stepMes(-1);
   const bn=document.getElementById("btnMesNext");if(bn)bn.onclick=()=>stepMes(1);
   const bi=document.getElementById("btnImprimirRel");if(bi)bi.onclick=()=>window.print();
+  // Dar baixa em tudo do mês
+  const btnBaixaMes=document.getElementById("btnBaixaMes");
+  if(btnBaixaMes)btnBaixaMes.onclick=async()=>{
+    const mesRef=window._divMesRef||(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"));
+    const ativas=dividas.filter(d=>dividaAtivaNoMes(d,mesRef)&&!d.pago&&!d.contestada);
+    if(ativas.length===0){alert("Não há dívidas pendentes neste mês.");return;}
+    const total=ativas.reduce((s,d)=>s+(+d.valor||0),0);
+    const temFixa=ativas.some(d=>(d.tipo_divida||"unica")!=="unica");
+    let msg=`Dar baixa em ${ativas.length} dívida(s) pendente(s) deste mês (total ${fmt(total)})?`;
+    if(temFixa)msg+="\n\n⚠ Atenção: dívidas fixas/recorrentes serão marcadas como pagas por INTEIRO (não só a parcela do mês).";
+    if(!confirm(msg))return;
+    for(const d of ativas){await upd("dividas",d.id,{pago:true,data_pagto:hoje()});}
+    await loadAll();
+  };
+  // Excluir tudo do mês
+  const btnLimpaMes=document.getElementById("btnLimpaMes");
+  if(btnLimpaMes)btnLimpaMes.onclick=async()=>{
+    const mesRef=window._divMesRef||(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"));
+    const ativas=dividas.filter(d=>dividaAtivaNoMes(d,mesRef));
+    if(ativas.length===0){alert("Não há dívidas neste mês.");return;}
+    const temFixa=ativas.some(d=>(d.tipo_divida||"unica")!=="unica");
+    let msg=`⚠ EXCLUIR ${ativas.length} dívida(s) deste mês?`;
+    if(temFixa)msg+="\n\nDívidas fixas/recorrentes serão excluídas por INTEIRO (afetando todos os meses do contrato, não só este).";
+    msg+="\n\nNão tem volta.";
+    if(!confirm(msg))return;
+    if(!confirm(`Tem CERTEZA mesmo? Vai apagar ${ativas.length} dívida(s).`))return;
+    for(const d of ativas){await del("dividas",d.id);}
+    await loadAll();
+  };
+  // Excluir tudo (visão geral)
+  const btnLimpaTudo=document.getElementById("btnLimpaTudo");
+  if(btnLimpaTudo)btnLimpaTudo.onclick=async()=>{
+    const total=dividas.reduce((s,d)=>s+(+d.valor||0),0);
+    if(!confirm(`⚠ EXCLUIR TODAS as ${dividas.length} dívidas entre você e a outra parte (${fmt(total)} no total)?\n\nNão tem volta.`))return;
+    if(!confirm(`Tem CERTEZA mesmo? Vai apagar as ${dividas.length} dívidas.`))return;
+    for(const d of dividas){await del("dividas",d.id);}
+    await loadAll();
+  };
   const btnNova=document.getElementById("btnNovaDiv");
   if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;window._divTipo=window._divTipo||"unica";window._divDirecao=window._divDirecao||"pagar";render();};
   document.querySelectorAll("[data-tipo-div]").forEach(b=>b.onclick=()=>{window._divTipo=b.dataset.tipoDiv;render();});
