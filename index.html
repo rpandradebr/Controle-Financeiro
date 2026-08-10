@@ -399,7 +399,7 @@ const hoje=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth(
 const brDate=d=>(d||"").split("-").reverse().join("/");
 
 let sb=null, session=null, signupMode=false;
-let contas=[], cartoes=[], categorias=[], txs=[], recorrentes=[], dividas=[];
+let contas=[], cartoes=[], categorias=[], txs=[], recorrentes=[], dividas=[], credores=[];
 const N=new Date(); let ano=N.getFullYear(), mes=N.getMonth(), view="dashboard";
 let charts=[];
 
@@ -419,7 +419,7 @@ function showLogin(){ document.getElementById("app").classList.add("hidden"); do
 async function enterApp(){
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
-  buildDrawer(); await loadAll();
+  buildDrawerOnce(); await loadAll();
 }
 
 /* ---------- auth handlers ---------- */
@@ -449,15 +449,16 @@ document.getElementById("btnLogout").onclick=async()=>{ await sb.auth.signOut();
 /* ---------- data ---------- */
 async function loadAll(){
   const uid=session.user.id;
-  const [c1,c2,c3,c4,c5,c6]=await Promise.all([
+  const [c1,c2,c3,c4,c5,c6,c7]=await Promise.all([
     sb.from("contas").select("*").order("criado_em"),
     sb.from("cartoes").select("*").order("criado_em"),
     sb.from("categorias").select("*").order("criado_em"),
     sb.from("transacoes").select("*").order("data",{ascending:false}),
     sb.from("recorrentes").select("*").order("criado_em"),
     sb.from("dividas").select("*").order("criado_em",{ascending:false}),
+    sb.from("app_credores").select("*"),
   ]);
-  contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[];
+  contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[]; credores=c7.data||[];
   render();
 }
 const ins=(t,row)=>sb.from(t).insert({...row,user_id:session.user.id});
@@ -519,35 +520,64 @@ function saldosContas(){
 const TABS=[["dashboard","Painel","📊"],["diarios","Gastos do dia","⚡"],["lancamentos","Lançamentos","📝"],["cartoes","Cartões","💳"],["recorrentes","Fixas & Recorrentes","📌"],["dividas","Dívidas Talita","🤝"],["relatorios","Relatórios","📑"],["anual","Anual","📈"],["config","Configurações","⚙️"]];
 function openDrawer(){document.getElementById("drawer").classList.add("open");document.getElementById("backdrop").classList.add("open");}
 function closeDrawer(){document.getElementById("drawer").classList.remove("open");document.getElementById("backdrop").classList.remove("open");}
-function buildDrawer(){
-  const dm=document.getElementById("drawerMenu");
-  dm.innerHTML=TABS.map(t=>`<button data-v="${t[0]}"><span class="dicon">${t[2]||""}</span> ${t[1]}</button>`).join("");
-  dm.querySelectorAll("button").forEach(b=>b.onclick=()=>{
-    view=b.dataset.v;
-    if(view==="diarios"){const n=new Date();mes=n.getMonth();ano=n.getFullYear();}
-    closeDrawer();render();
-  });
+function isCredorMode(){
+  const email=(session&&session.user&&session.user.email||"").toLowerCase();
+  if(!email)return false;
+  return credores.some(c=>(c.email||"").toLowerCase()===email);
+}
+function buildDrawerOnce(){
   document.getElementById("btnMenu").onclick=openDrawer;
   document.getElementById("btnCloseDrawer").onclick=closeDrawer;
   document.getElementById("backdrop").onclick=closeDrawer;
   document.getElementById("mPrev").onclick=()=>{if(mes===0){mes=11;ano--;}else mes--;render();};
   document.getElementById("mNext").onclick=()=>{if(mes===11){mes=0;ano++;}else mes++;render();};
 }
+function buildDrawerMenu(){
+  const credorMode=isCredorMode();
+  const availableTabs=credorMode?TABS.filter(t=>t[0]==="dividas"):TABS;
+  const dm=document.getElementById("drawerMenu");
+  dm.innerHTML=availableTabs.map(t=>{
+    const label=(credorMode && t[0]==="dividas")?"Contas a receber":t[1];
+    return `<button data-v="${t[0]}"><span class="dicon">${t[2]||""}</span> ${label}</button>`;
+  }).join("");
+  dm.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    view=b.dataset.v;
+    if(view==="diarios"){const n=new Date();mes=n.getMonth();ano=n.getFullYear();}
+    closeDrawer();render();
+  });
+}
+function buildDrawer(){buildDrawerOnce();buildDrawerMenu();}
 function ymSel(){return ano+"-"+String(mes+1).padStart(2,"0");}
 
 function render(){
   charts.forEach(c=>c.destroy()); charts=[];
-  const ti=TABS.find(x=>x[0]===view);document.getElementById("sectionTitle").textContent=ti?ti[1]:"";
+  const credorMode=isCredorMode();
+  if(credorMode && view!=="dividas")view="dividas";
+  buildDrawerMenu();
+  const ti=TABS.find(x=>x[0]===view);
+  const secLabel=(credorMode && view==="dividas")?"Contas a receber":(ti?ti[1]:"");
+  document.getElementById("sectionTitle").textContent=secLabel;
   document.querySelectorAll("#drawerMenu button").forEach(b=>b.classList.toggle("active",b.dataset.v===view));
   const subRel=window._relSub||"mensal";
   const showMonth=["dashboard","lancamentos","cartoes","recorrentes"].includes(view)||(view==="relatorios"&&subRel==="mensal");
   document.getElementById("monthbar").classList.toggle("hidden",!showMonth);
   document.getElementById("mNome").textContent=MESES_L[mes];
   document.getElementById("mAno").textContent=ano;
-  const sa=saldoAte(ymSel());
-  document.getElementById("saldoTop").textContent=fmt(sa);
-  document.getElementById("saldoTop").className=sa>=0?"pos":"neg";
-  document.getElementById("mesLabelTop").textContent=MESES_L[mes].toLowerCase();
+  if(credorMode){
+    const totalReceber=dividas.filter(d=>!d.pago).reduce((s,d)=>s+(+d.valor||0),0);
+    document.getElementById("saldoTop").textContent=fmt(totalReceber);
+    document.getElementById("saldoTop").className=totalReceber>0?"neg":"";
+    document.getElementById("mesLabelTop").textContent="";
+    const parent=document.getElementById("mesLabelTop").parentElement;
+    if(parent)parent.firstChild.textContent="Total a receber";
+  } else {
+    const sa=saldoAte(ymSel());
+    document.getElementById("saldoTop").textContent=fmt(sa);
+    document.getElementById("saldoTop").className=sa>=0?"pos":"neg";
+    const parent=document.getElementById("mesLabelTop").parentElement;
+    if(parent && parent.firstChild)parent.firstChild.textContent="Saldo até ";
+    document.getElementById("mesLabelTop").textContent=MESES_L[mes].toLowerCase();
+  }
   const c=document.getElementById("content");
   if(view==="dashboard")c.innerHTML=viewDashboard();
   else if(view==="diarios")c.innerHTML=viewDiarios();
@@ -997,7 +1027,9 @@ function wireRelatorios(){
   const yn=document.querySelector("[data-rel-ynext]");if(yn)yn.onclick=()=>{ano++;render();};
 }
 function renderDivida(d,uid,isCredor,mesRef){
-  const podeEditar=(d.user_id===uid)&&!isCredor;
+  // ambos os lados podem agir (dar baixa / contestar); só o criador pode excluir
+  const podeEditar=true;
+  const podeExcluir=(d.user_id===uid);
   const tipo=d.tipo_divida||"unica";
   const badge=`<span class="tipo-badge ${tipo}">${tipo==="unica"?"única":tipo}</span>`;
   let periodo="";
@@ -1024,7 +1056,9 @@ function renderDivida(d,uid,isCredor,mesRef){
     }
   }
   const pagoStr=(d.pago&&d.data_pagto)?`pago em ${brDate(d.data_pagto)}`:"";
-  const meta=[d.credor_nome,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
+  // "outra parte" — se sou credor, mostro o devedor; senão, o credor
+  const outraParte=isCredor?(d.devedor_nome||d.devedor_email||"Devedor"):(d.credor_nome||d.credor_email||"Credor");
+  const meta=[outraParte,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
   const contestBadge=d.contestada?`<div class="contest-badge">⚠ contestada${d.motivo_contestacao?`<small>"${d.motivo_contestacao}"</small>`:""}</div>`:"";
   const stateCls=d.pago?"pago":(d.contestada?"contest":"");
   return `<div class="divida-item ${stateCls}">
@@ -1033,7 +1067,7 @@ function renderDivida(d,uid,isCredor,mesRef){
     ${podeEditar?`<div class="acts">
       ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar baixa">↺</button>`:`<button data-div-pago="${d.id}" title="Dar baixa (pago)">✓</button>`}
       ${d.contestada?`<button data-div-descontest="${d.id}" title="Remover contestação">✕⚠</button>`:`<button data-div-contest="${d.id}" title="Contestar essa dívida">⚠</button>`}
-      <button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>
+      ${podeExcluir?`<button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>`:""}
     </div>`:""}
   </div>`;
 }
@@ -1047,26 +1081,36 @@ function dividaAtivaNoMes(d,mesRef){
 }
 function viewDividas(){
   const uid=session.user.id;
-  const minhas=dividas.filter(d=>d.user_id===uid);
-  const paraMim=dividas.filter(d=>d.user_id!==uid);
-  const isCredor=paraMim.length>0 && minhas.length===0;
-  const list=isCredor?paraMim:minhas;
+  const myEmail=(session.user.email||"").toLowerCase();
+  const isCredor=isCredorMode();
+  // vê TODAS as dívidas que participa (RLS já filtra); no display não separa por criador
+  const list=dividas;
   let modo=window._divModo||"lancamentos";
   if(modo==="todas")modo="lancamentos";
   if(modo==="mensal")modo="relatorios";
-  const ultima=minhas[0]||{};
-  const defNome=ultima.credor_nome||"Talita";
-  const defEmail=ultima.credor_email||"";
+  // padrões pra pré-preencher: última dívida da mesma direção
+  const ultimaMinha=dividas.find(d=>d.user_id===uid)||{};
+  const ultimaOutra=dividas.find(d=>d.user_id!==uid)||{};
+  let defNome, defEmail;
+  if(isCredor){
+    // credor mode: o campo do form é do DEVEDOR (a outra parte)
+    defNome=ultimaOutra.devedor_nome||ultimaMinha.devedor_nome||"";
+    defEmail=ultimaOutra.devedor_email||ultimaMinha.devedor_email||"";
+  } else {
+    // owner mode: o campo do form é do CREDOR
+    defNome=ultimaMinha.credor_nome||ultimaOutra.credor_nome||"Talita";
+    defEmail=ultimaMinha.credor_email||ultimaOutra.credor_email||"";
+  }
   const adding=window._addingDiv;
   const tipoSel=window._divTipo||"unica";
   const now=new Date();
   const mesAtual=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   const mesRef=window._divMesRef||mesAtual;
   const notice=isCredor
-    ?`<div class="card wide"><div class="divida-notice">Você está vendo dívidas cadastradas com o seu email. As outras abas do app são seu espaço pessoal — pode ignorar se entrou aqui só pra acompanhar essas dívidas.</div></div>`
+    ?`<div class="card wide"><div class="divida-notice">Você é o credor. Aqui você vê e lança as contas que a outra parte tem com você. Ela também pode dar baixa quando pagar.</div></div>`
     :"";
-  const noticeVazio=(!isCredor && minhas.length===0)
-    ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas com Talita (luz, água, cartão, parcelas). Coloque o email dela em "Credor (email)" — quando ela criar conta no app com esse mesmo email, ela vai ver essas dívidas.</div></div>`
+  const noticeVazio=(!isCredor && list.length===0)
+    ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas com Talita (luz, água, cartão, parcelas). Coloque o email dela em "Credor (email)" — quando ela criar conta no app com esse mesmo email, ela verá e poderá lançar essas dívidas também.</div></div>`
     :"";
   const modoTabs=`<div class="tipo-tabs" style="max-width:340px;margin:0 auto 16px">
     <button data-div-modo="lancamentos" class="${modo==="lancamentos"?"active":""}">📝 Lançamentos</button>
@@ -1083,8 +1127,8 @@ function viewDividas(){
         <button data-tipo-div="recorrente" class="${tipoSel==="recorrente"?"active":""}">Recorrente</button>
       </div>
       <div class="form">
-        <label>Credor (nome)<input id="dv_credorNome" value="${defNome}"></label>
-        <label>Credor (email) <span style="font-weight:400;font-style:italic;font-size:11px">pra ela poder ver</span><input id="dv_credorEmail" type="email" value="${defEmail}" placeholder="email@exemplo.com"></label>
+        <label>${isCredor?"Devedor (nome)":"Credor (nome)"}<input id="dv_credorNome" value="${defNome}"></label>
+        <label>${isCredor?"Devedor (email)":"Credor (email)"} <span style="font-weight:400;font-style:italic;font-size:11px">${isCredor?"quem deve pagar":"pra ela poder ver e lançar"}</span><input id="dv_credorEmail" type="email" value="${defEmail}" placeholder="email@exemplo.com"></label>
         <label class="wide">Descrição<input id="dv_desc" placeholder="Ex: conta de luz de nov, parcela cartão Nubank"></label>
         <label>${labelValor}<input id="dv_valor" type="number" inputmode="decimal" placeholder="0,00"></label>
         <label>Mês de entrada<input id="dv_mesIni" type="month" value="${mesAtual}"></label>
@@ -1174,8 +1218,10 @@ function wireDividas(){
   document.querySelectorAll("[data-tipo-div]").forEach(b=>b.onclick=()=>{window._divTipo=b.dataset.tipoDiv;render();});
   const btnSalvar=document.getElementById("btnSalvarDiv");
   if(btnSalvar)btnSalvar.onclick=async()=>{
-    const credor_nome=document.getElementById("dv_credorNome").value.trim()||"Credor";
-    const credor_email=document.getElementById("dv_credorEmail").value.trim().toLowerCase();
+    const isCredor=isCredorMode();
+    const myEmail=(session.user.email||"").toLowerCase();
+    const outroNome=document.getElementById("dv_credorNome").value.trim();
+    const outroEmail=document.getElementById("dv_credorEmail").value.trim().toLowerCase();
     const descricao=document.getElementById("dv_desc").value.trim();
     const valor=parseFloat((document.getElementById("dv_valor").value||"").replace(",","."));
     const tipo_divida=window._divTipo||"unica";
@@ -1184,12 +1230,23 @@ function wireDividas(){
     let mes_fim=mesFimEl?(mesFimEl.value||null):null;
     if(tipo_divida==="unica")mes_fim=mes_inicio;
     const observacao=document.getElementById("dv_obs").value.trim()||null;
-    if(!credor_email){alert("Coloque o email do credor.");return;}
+    if(!outroEmail){alert("Coloque o email da outra parte.");return;}
     if(!descricao){alert("Coloque uma descrição.");return;}
     if(!valor||valor<=0){alert("Coloque um valor válido.");return;}
     if(!mes_inicio){alert("Escolha o mês de entrada.");return;}
     if(tipo_divida==="fixa" && !mes_fim){alert("Fixa precisa do mês final pra saber quantas parcelas.");return;}
-    await ins("dividas",{credor_nome,credor_email,descricao,valor,tipo_divida,mes_inicio,mes_fim,observacao});
+    // monta credor/devedor conforme papel
+    let credor_email, credor_nome, devedor_email, devedor_nome;
+    if(isCredor){
+      credor_email=myEmail; credor_nome=outroNome||"Credor";
+      devedor_email=outroEmail; devedor_nome=outroNome||"Devedor";
+    } else {
+      credor_email=outroEmail; credor_nome=outroNome||"Credor";
+      devedor_email=myEmail;   devedor_nome="Devedor";
+    }
+    await ins("dividas",{credor_nome,credor_email,devedor_nome,devedor_email,descricao,valor,tipo_divida,mes_inicio,mes_fim,observacao});
+    // registrar o credor na lista pública (idempotente) pra o app detectar
+    try{await sb.from("app_credores").insert({email:credor_email,nome:credor_nome}).select();}catch(e){}
     window._addingDiv=false;
     await loadAll();
   };
