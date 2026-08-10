@@ -523,6 +523,9 @@ function closeDrawer(){document.getElementById("drawer").classList.remove("open"
 function isCredorMode(){
   const email=(session&&session.user&&session.user.email||"").toLowerCase();
   if(!email)return false;
+  // Se tem qualquer setup pessoal, você é dono do app — nunca é credor puro,
+  // mesmo que teu email por acaso apareça na lista de credores.
+  if(contas.length>0 || cartoes.length>0 || txs.length>0 || recorrentes.length>0)return false;
   return credores.some(c=>(c.email||"").toLowerCase()===email);
 }
 function buildDrawerOnce(){
