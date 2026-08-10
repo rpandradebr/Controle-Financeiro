@@ -1029,16 +1029,14 @@ function wireRelatorios(){
   const yp=document.querySelector("[data-rel-yprev]");if(yp)yp.onclick=()=>{ano--;render();};
   const yn=document.querySelector("[data-rel-ynext]");if(yn)yn.onclick=()=>{ano++;render();};
 }
-function renderDivida(d,uid,isCredor,mesRef){
-  // ambos os lados podem agir (dar baixa / contestar); só o criador pode excluir
-  const podeEditar=true;
+function renderDivida(d,uid,_ignored,mesRef,direcao){
+  // direcao: "pagar" (eu devo pra outro) | "receber" (outro me deve)
   const podeExcluir=(d.user_id===uid);
   const tipo=d.tipo_divida||"unica";
   const badge=`<span class="tipo-badge ${tipo}">${tipo==="unica"?"única":tipo}</span>`;
   let periodo="";
   let totalCalc="";
   if(mesRef){
-    // no relatório mensal, mostra a parcela específica daquele mês
     if(tipo==="fixa" && d.mes_inicio && d.mes_fim){
       const atual=mesesEntre(d.mes_inicio,mesRef);
       const total=mesesEntre(d.mes_inicio,d.mes_fim);
@@ -1047,7 +1045,6 @@ function renderDivida(d,uid,isCredor,mesRef){
     } else if(tipo==="recorrente"){periodo="cobrança mensal";}
     else {periodo=d.mes_inicio?"pagamento em "+fmtMes(d.mes_inicio):"";}
   } else {
-    // na lista geral (Lançamentos), mostra o período todo
     if(tipo==="unica"){periodo=d.mes_inicio?fmtMes(d.mes_inicio):"";}
     else if(d.mes_inicio && d.mes_fim){const n=mesesEntre(d.mes_inicio,d.mes_fim);periodo=`${fmtMes(d.mes_inicio)} → ${fmtMes(d.mes_fim)}${n?" ("+n+" meses)":""}`;}
     else if(d.mes_inicio){periodo=`desde ${fmtMes(d.mes_inicio)}`;}
@@ -1059,19 +1056,19 @@ function renderDivida(d,uid,isCredor,mesRef){
     }
   }
   const pagoStr=(d.pago&&d.data_pagto)?`pago em ${brDate(d.data_pagto)}`:"";
-  // "outra parte" — se sou credor, mostro o devedor; senão, o credor
-  const outraParte=isCredor?(d.devedor_nome||d.devedor_email||"Devedor"):(d.credor_nome||d.credor_email||"Credor");
+  // Nome da outra parte depende da direção
+  const outraParte=(direcao==="receber")?(d.devedor_nome||d.devedor_email||"outra parte"):(d.credor_nome||d.credor_email||"outra parte");
   const meta=[outraParte,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
   const contestBadge=d.contestada?`<div class="contest-badge">⚠ contestada${d.motivo_contestacao?`<small>"${d.motivo_contestacao}"</small>`:""}</div>`:"";
   const stateCls=d.pago?"pago":(d.contestada?"contest":"");
   return `<div class="divida-item ${stateCls}">
     <div class="mid"><b>${badge}${d.descricao}</b><small>${meta}</small>${totalCalc}${contestBadge}</div>
     <b class="val">${fmt(d.valor)}</b>
-    ${podeEditar?`<div class="acts">
+    <div class="acts">
       ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar baixa">↺</button>`:`<button data-div-pago="${d.id}" title="Dar baixa (pago)">✓</button>`}
       ${d.contestada?`<button data-div-descontest="${d.id}" title="Remover contestação">✕⚠</button>`:`<button data-div-contest="${d.id}" title="Contestar essa dívida">⚠</button>`}
       ${podeExcluir?`<button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>`:""}
-    </div>`:""}
+    </div>
   </div>`;
 }
 function fmtMes(ym){if(!ym)return"";const p=ym.split("-");if(p.length<2)return"";return MESES[+p[1]-1].toLowerCase()+"/"+p[0].slice(-2);}
@@ -1082,104 +1079,7 @@ function dividaAtivaNoMes(d,mesRef){
   const fim=d.mes_fim||"9999-12";
   return d.mes_inicio<=mesRef && mesRef<=fim;
 }
-function viewDividas(){
-  const uid=session.user.id;
-  const myEmail=(session.user.email||"").toLowerCase();
-  const isCredor=isCredorMode();
-  // vê TODAS as dívidas que participa (RLS já filtra); no display não separa por criador
-  const list=dividas;
-  let modo=window._divModo||"lancamentos";
-  if(modo==="todas")modo="lancamentos";
-  if(modo==="mensal")modo="relatorios";
-  // padrões pra pré-preencher: última dívida da mesma direção
-  const ultimaMinha=dividas.find(d=>d.user_id===uid)||{};
-  const ultimaOutra=dividas.find(d=>d.user_id!==uid)||{};
-  let defNome, defEmail;
-  if(isCredor){
-    // credor mode: o campo do form é do DEVEDOR (a outra parte)
-    defNome=ultimaOutra.devedor_nome||ultimaMinha.devedor_nome||"";
-    defEmail=ultimaOutra.devedor_email||ultimaMinha.devedor_email||"";
-  } else {
-    // owner mode: o campo do form é do CREDOR
-    defNome=ultimaMinha.credor_nome||ultimaOutra.credor_nome||"Talita";
-    defEmail=ultimaMinha.credor_email||ultimaOutra.credor_email||"";
-  }
-  const adding=window._addingDiv;
-  const tipoSel=window._divTipo||"unica";
-  const now=new Date();
-  const mesAtual=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-  const mesRef=window._divMesRef||mesAtual;
-  const notice=isCredor
-    ?`<div class="card wide"><div class="divida-notice">Você é o credor. Aqui você vê e lança as contas que a outra parte tem com você. Ela também pode dar baixa quando pagar.</div></div>`
-    :"";
-  const noticeVazio=(!isCredor && list.length===0)
-    ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas com Talita (luz, água, cartão, parcelas). Coloque o email dela em "Credor (email)" — quando ela criar conta no app com esse mesmo email, ela verá e poderá lançar essas dívidas também.</div></div>`
-    :"";
-  const modoTabs=`<div class="tipo-tabs" style="max-width:340px;margin:0 auto 16px">
-    <button data-div-modo="lancamentos" class="${modo==="lancamentos"?"active":""}">📝 Lançamentos</button>
-    <button data-div-modo="relatorios" class="${modo==="relatorios"?"active":""}">📑 Relatórios</button>
-  </div>`;
-  const btnNova=!isCredor?`<button class="btn-ghost" id="btnNovaDiv">${adding?"× Cancelar":"+ Nova dívida"}</button>`:"";
-  const labelValor=tipoSel==="unica"?"Valor da dívida (R$)":(tipoSel==="fixa"?"Valor por parcela (R$)":"Valor médio por mês (R$)");
-  const showMesFim=tipoSel!=="unica";
-  const formNova=(adding && !isCredor)?`
-    <div class="card wide"><h3>Nova dívida</h3>
-      <div class="tipo-tabs" style="max-width:420px;margin-bottom:16px">
-        <button data-tipo-div="unica" class="${tipoSel==="unica"?"active":""}">Única</button>
-        <button data-tipo-div="fixa" class="${tipoSel==="fixa"?"active":""}">Fixa (parcelada)</button>
-        <button data-tipo-div="recorrente" class="${tipoSel==="recorrente"?"active":""}">Recorrente</button>
-      </div>
-      <div class="form">
-        <label>${isCredor?"Devedor (nome)":"Credor (nome)"}<input id="dv_credorNome" value="${defNome}"></label>
-        <label>${isCredor?"Devedor (email)":"Credor (email)"} <span style="font-weight:400;font-style:italic;font-size:11px">${isCredor?"quem deve pagar":"pra ela poder ver e lançar"}</span><input id="dv_credorEmail" type="email" value="${defEmail}" placeholder="email@exemplo.com"></label>
-        <label class="wide">Descrição<input id="dv_desc" placeholder="Ex: conta de luz de nov, parcela cartão Nubank"></label>
-        <label>${labelValor}<input id="dv_valor" type="number" inputmode="decimal" placeholder="0,00"></label>
-        <label>Mês de entrada<input id="dv_mesIni" type="month" value="${mesAtual}"></label>
-        ${showMesFim?`<label>Mês final ${tipoSel==="recorrente"?'<span style="font-weight:400;font-style:italic;font-size:11px">opcional se não tem fim</span>':''}<input id="dv_mesFim" type="month"></label>`:""}
-        <label class="wide">Observação (opcional)<input id="dv_obs" placeholder="qualquer detalhe extra"></label>
-        <button class="btn-add" id="btnSalvarDiv">+ Salvar dívida</button>
-      </div>
-    </div>`:"";
-
-  if(modo==="relatorios"){
-    // relatório do mês selecionado
-    const ativas=list.filter(d=>dividaAtivaNoMes(d,mesRef));
-    const totalPrev=ativas.reduce((s,d)=>s+(+d.valor||0),0);
-    const pagas=ativas.filter(d=>d.pago);
-    const contest=ativas.filter(d=>!d.pago && d.contestada);
-    const pend=ativas.filter(d=>!d.pago && !d.contestada);
-    const totPago=pagas.reduce((s,d)=>s+(+d.valor||0),0);
-    const totContest=contest.reduce((s,d)=>s+(+d.valor||0),0);
-    const totPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
-    // navegador de mês
-    const [yr,mn]=mesRef.split("-").map(Number);
-    return `<div class="grid">
-      ${notice}${noticeVazio}
-      <div class="card wide">${modoTabs}
-        <div class="mes-picker">
-          <button id="btnMesPrev">‹</button>
-          <div class="lbl"><b>${MESES_L[mn-1]}</b><small>${yr}</small></div>
-          <button id="btnMesNext">›</button>
-        </div>
-        <div class="divida-subgrid">
-          <div class="item"><small>Previsto</small><b>${fmt(totalPrev)}</b></div>
-          <div class="item paga"><small>Já pago</small><b>${fmt(totPago)}</b></div>
-          <div class="item pend"><small>A pagar</small><b>${fmt(totPend)}</b></div>
-          <div class="item cont"><small>Contestado</small><b>${fmt(totContest)}</b></div>
-        </div>
-        <button class="btn-ghost" id="btnImprimirRel">🖨 Imprimir / Salvar como PDF</button>
-      </div>
-      <div class="card wide" id="rel-print-area"><h3>Dívidas que caem em ${MESES_L[mn-1]}/${yr}</h3>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px">Credor: ${(list[0]||{}).credor_nome||"—"} · gerado em ${brDate(hoje())}</div>
-        ${ativas.length===0?'<div class="empty">Nenhuma dívida ativa nesse mês.</div>':`
-        ${pend.length?`<div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin:8px 0 6px">A pagar</div>${pend.map(d=>renderDivida(d,uid,isCredor,mesRef)).join("")}`:""}
-        ${contest.length?`<div style="font-size:12px;color:var(--amber);font-weight:600;margin:14px 0 6px">Em contestação</div>${contest.map(d=>renderDivida(d,uid,isCredor,mesRef)).join("")}`:""}
-        ${pagas.length?`<div style="font-size:12px;color:var(--accent-dark);font-weight:600;margin:14px 0 6px">Já pagas</div>${pagas.map(d=>renderDivida(d,uid,isCredor,mesRef)).join("")}`:""}
-        `}
-      </div>
-    </div>`;
-  }
-  // modo Todas (geral)
+function renderBlocoDividas(titulo,list,direcao,uid){
   const sortKey=d=>d.mes_inicio||(d.data||"").slice(0,7);
   const pend=list.filter(d=>!d.pago && !d.contestada).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
   const contest=list.filter(d=>!d.pago && d.contestada).sort((a,b)=>sortKey(b).localeCompare(sortKey(a)));
@@ -1187,47 +1087,164 @@ function viewDividas(){
   const totPend=pend.reduce((s,d)=>s+(+d.valor||0),0);
   const totCont=contest.reduce((s,d)=>s+(+d.valor||0),0);
   const totPago=pagos.reduce((s,d)=>s+(+d.valor||0),0);
-  const totGeral=totPend+totCont+totPago;
+  if(list.length===0)return `<div class="card wide"><h3>${titulo}</h3><div class="empty">Nada por aqui.</div></div>`;
+  return `<div class="card wide"><h3>${titulo}</h3>
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">
+      Pendente: <b>${fmt(totPend)}</b>${contest.length?` · Contestado: <b class="amb">${fmt(totCont)}</b>`:""}${pagos.length?` · Já pago: <b class="pos">${fmt(totPago)}</b>`:""}
+    </div>
+    ${pend.length?`<div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin:8px 0 6px">Pendentes</div>${pend.map(d=>renderDivida(d,uid,false,null,direcao)).join("")}`:""}
+    ${contest.length?`<div style="font-size:12px;color:var(--amber);font-weight:600;margin:14px 0 6px">Em contestação</div>${contest.map(d=>renderDivida(d,uid,false,null,direcao)).join("")}`:""}
+    ${pagos.length?`<div style="font-size:12px;color:var(--accent-dark);font-weight:600;margin:14px 0 6px">Já pagas</div>${pagos.map(d=>renderDivida(d,uid,false,null,direcao)).join("")}`:""}
+  </div>`;
+}
+function viewDividas(){
+  const uid=session.user.id;
+  const myEmail=(session.user.email||"").toLowerCase();
+  const isCredor=isCredorMode();
+  // BIDIRECIONAL: separa dívidas em "a pagar" (sou devedor) e "a receber" (sou credor)
+  const aPagar=dividas.filter(d=>(d.devedor_email||"").toLowerCase()===myEmail);
+  const aReceber=dividas.filter(d=>(d.credor_email||"").toLowerCase()===myEmail);
+  // Nome da outra parte (Talita p/ Rafael; Rafael p/ Talita)
+  let outroNome="a outra parte", outroEmailDefault="";
+  if(aPagar.length>0){outroNome=aPagar[0].credor_nome||"a outra parte";outroEmailDefault=aPagar[0].credor_email||"";}
+  else if(aReceber.length>0){outroNome=aReceber[0].devedor_nome||"a outra parte";outroEmailDefault=aReceber[0].devedor_email||"";}
+  let modo=window._divModo||"lancamentos";
+  if(modo==="todas")modo="lancamentos";
+  if(modo==="mensal")modo="relatorios";
+  const adding=window._addingDiv;
+  const tipoSel=window._divTipo||"unica";
+  const direcaoNova=window._divDirecao||"pagar"; // pagar = eu devo; receber = outro me deve
+  const now=new Date();
+  const mesAtual=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  const mesRef=window._divMesRef||mesAtual;
+  // Consolidado (só pendentes)
+  const somaPend=arr=>arr.filter(d=>!d.pago && !d.contestada).reduce((s,d)=>s+(+d.valor||0),0);
+  const totalAPagar=somaPend(aPagar);
+  const totalAReceber=somaPend(aReceber);
+  const saldo=totalAReceber-totalAPagar;
+  let saldoTxt="";
+  if(saldo>0){saldoTxt=`${outroNome} te deve <b class="pos">${fmt(saldo)}</b>`;}
+  else if(saldo<0){saldoTxt=`Você deve <b class="neg">${fmt(-saldo)}</b> pra ${outroNome}`;}
+  else{saldoTxt=`Tudo quitado — sem saldo em aberto`;}
+  const modoTabs=`<div class="tipo-tabs" style="max-width:340px;margin:0 auto 16px">
+    <button data-div-modo="lancamentos" class="${modo==="lancamentos"?"active":""}">📝 Lançamentos</button>
+    <button data-div-modo="relatorios" class="${modo==="relatorios"?"active":""}">📑 Relatórios</button>
+  </div>`;
+  const labelValor=tipoSel==="unica"?"Valor da dívida (R$)":(tipoSel==="fixa"?"Valor por parcela (R$)":"Valor médio por mês (R$)");
+  const showMesFim=tipoSel!=="unica";
+  const outroLabel=outroNome==="a outra parte"?"outra parte":outroNome;
+  const formNova=adding?`
+    <div class="card wide"><h3>Nova dívida</h3>
+      <small style="font-size:12px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Quem deve pagar?</small>
+      <div class="tipo-tabs" style="max-width:520px;margin-bottom:16px">
+        <button data-div-direcao="pagar" class="${direcaoNova==="pagar"?"active":""}">→ Eu pago pra ${outroLabel}</button>
+        <button data-div-direcao="receber" class="${direcaoNova==="receber"?"active":""}">← ${outroLabel} me paga</button>
+      </div>
+      <small style="font-size:12px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px">Tipo</small>
+      <div class="tipo-tabs" style="max-width:420px;margin-bottom:16px">
+        <button data-tipo-div="unica" class="${tipoSel==="unica"?"active":""}">Única</button>
+        <button data-tipo-div="fixa" class="${tipoSel==="fixa"?"active":""}">Fixa (parcelada)</button>
+        <button data-tipo-div="recorrente" class="${tipoSel==="recorrente"?"active":""}">Recorrente</button>
+      </div>
+      <div class="form">
+        <label>Nome (outra parte)<input id="dv_outroNome" value="${outroNome==="a outra parte"?"":outroNome}"></label>
+        <label>Email (outra parte) <span style="font-weight:400;font-style:italic;font-size:11px">pra ela ver</span><input id="dv_outroEmail" type="email" value="${outroEmailDefault}" placeholder="email@exemplo.com"></label>
+        <label class="wide">Descrição<input id="dv_desc" placeholder="Ex: conta de luz de nov, parcela cartão"></label>
+        <label>${labelValor}<input id="dv_valor" type="number" inputmode="decimal" placeholder="0,00"></label>
+        <label>Mês de entrada<input id="dv_mesIni" type="month" value="${mesAtual}"></label>
+        ${showMesFim?`<label>Mês final ${tipoSel==="recorrente"?'<span style="font-weight:400;font-style:italic;font-size:11px">opcional se não tem fim</span>':''}<input id="dv_mesFim" type="month"></label>`:""}
+        <label class="wide">Observação (opcional)<input id="dv_obs" placeholder="qualquer detalhe extra"></label>
+        <button class="btn-add" id="btnSalvarDiv">+ Salvar dívida</button>
+      </div>
+    </div>`:"";
+  const btnNova=`<button class="btn-ghost" id="btnNovaDiv">${adding?"× Cancelar":"+ Nova dívida"}</button>`;
+  const noticeVazio=(dividas.length===0)
+    ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas entre você e a outra parte. Cada um pode lançar em qualquer direção — contas que você deve OU contas que a outra parte te deve. Quando ela também criar conta no app com o email dela, ela verá e poderá lançar também.</div></div>`
+    :"";
+
+  if(modo==="relatorios"){
+    // Relatório do mês: filtra por dividaAtivaNoMes
+    const aPagarMes=aPagar.filter(d=>dividaAtivaNoMes(d,mesRef));
+    const aReceberMes=aReceber.filter(d=>dividaAtivaNoMes(d,mesRef));
+    const totPagMes=aPagarMes.filter(d=>!d.pago && !d.contestada).reduce((s,d)=>s+(+d.valor||0),0);
+    const totRecMes=aReceberMes.filter(d=>!d.pago && !d.contestada).reduce((s,d)=>s+(+d.valor||0),0);
+    const saldoMes=totRecMes-totPagMes;
+    let saldoMesTxt="";
+    if(saldoMes>0)saldoMesTxt=`${outroNome} te deve <b class="pos">${fmt(saldoMes)}</b>`;
+    else if(saldoMes<0)saldoMesTxt=`Você deve <b class="neg">${fmt(-saldoMes)}</b> pra ${outroNome}`;
+    else saldoMesTxt=`Saldo zerado neste mês`;
+    const [yr,mn]=mesRef.split("-").map(Number);
+    const listMes=(list,dir)=>{
+      const pend=list.filter(d=>!d.pago && !d.contestada);
+      const contest=list.filter(d=>!d.pago && d.contestada);
+      const pagos=list.filter(d=>d.pago);
+      if(list.length===0)return '<div class="empty">Nada neste mês.</div>';
+      return `${pend.length?`<div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin:8px 0 6px">Pendente</div>${pend.map(d=>renderDivida(d,uid,false,mesRef,dir)).join("")}`:""}
+        ${contest.length?`<div style="font-size:12px;color:var(--amber);font-weight:600;margin:14px 0 6px">Em contestação</div>${contest.map(d=>renderDivida(d,uid,false,mesRef,dir)).join("")}`:""}
+        ${pagos.length?`<div style="font-size:12px;color:var(--accent-dark);font-weight:600;margin:14px 0 6px">Já pago</div>${pagos.map(d=>renderDivida(d,uid,false,mesRef,dir)).join("")}`:""}`;
+    };
+    return `<div class="grid">
+      ${noticeVazio}
+      <div class="card wide">${modoTabs}
+        <div class="mes-picker">
+          <button id="btnMesPrev">‹</button>
+          <div class="lbl"><b>${MESES_L[mn-1]}</b><small>${yr}</small></div>
+          <button id="btnMesNext">›</button>
+        </div>
+        <div class="divida-subgrid">
+          <div class="item pend"><small>A pagar no mês</small><b>${fmt(totPagMes)}</b></div>
+          <div class="item paga"><small>A receber no mês</small><b>${fmt(totRecMes)}</b></div>
+          <div class="item" style="grid-column:span 2;background:linear-gradient(135deg,#f7f5ef,#f0ede3);border:1px solid var(--line)"><small>Consolidado</small><b style="font-size:15px;font-weight:600;line-height:1.4">${saldoMesTxt}</b></div>
+        </div>
+        <button class="btn-ghost" id="btnImprimirRel">🖨 Imprimir / Salvar como PDF</button>
+      </div>
+      <div class="card wide" id="rel-print-area">
+        <h3>Relatório de ${MESES_L[mn-1]}/${yr}</h3>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px">Entre você e ${outroNome} · gerado em ${brDate(hoje())}</div>
+        <h3 style="font-size:14px;margin-top:14px;margin-bottom:8px">→ Contas a pagar (você deve pra ${outroLabel})</h3>
+        ${listMes(aPagarMes,"pagar")}
+        <h3 style="font-size:14px;margin-top:20px;margin-bottom:8px">← Contas a receber (${outroLabel} te deve)</h3>
+        ${listMes(aReceberMes,"receber")}
+        <div style="margin-top:20px;padding:14px;background:var(--bg);border-radius:12px;font-size:14px">Consolidado do mês: ${saldoMesTxt}</div>
+      </div>
+    </div>`;
+  }
+
+  // Modo Lançamentos
   return `<div class="grid">
-    ${notice}${noticeVazio}
+    ${noticeVazio}
     <div class="card wide">${modoTabs}
       <div class="divida-subgrid">
-        <div class="item"><small>Total</small><b>${fmt(totGeral)}</b></div>
-        <div class="item pend"><small>Pendente</small><b>${fmt(totPend)}</b></div>
-        <div class="item cont"><small>Contestado</small><b>${fmt(totCont)}</b></div>
-        <div class="item paga"><small>Já pago</small><b>${fmt(totPago)}</b></div>
+        <div class="item pend"><small>A pagar</small><b>${fmt(totalAPagar)}</b></div>
+        <div class="item paga"><small>A receber</small><b>${fmt(totalAReceber)}</b></div>
+        <div class="item" style="grid-column:span 2;background:linear-gradient(135deg,#f7f5ef,#f0ede3);border:1px solid var(--line)"><small>Consolidado</small><b style="font-size:15px;font-weight:600;line-height:1.4">${saldoTxt}</b></div>
       </div>
       ${btnNova}
     </div>
     ${formNova}
-    <div class="card wide"><h3>Pendentes</h3>
-      ${pend.length===0?'<div class="empty">Nenhuma dívida pendente.</div>':pend.map(d=>renderDivida(d,uid,isCredor)).join("")}
-    </div>
-    ${contest.length>0?`<div class="card wide"><h3>Em contestação</h3>${contest.map(d=>renderDivida(d,uid,isCredor)).join("")}</div>`:""}
-    ${pagos.length>0?`<div class="card wide"><h3>Já pagas</h3>${pagos.map(d=>renderDivida(d,uid,isCredor)).join("")}</div>`:""}
+    ${renderBlocoDividas("→ Contas a pagar (você deve pra "+outroLabel+")",aPagar,"pagar",uid)}
+    ${renderBlocoDividas("← Contas a receber ("+outroLabel+" te deve)",aReceber,"receber",uid)}
   </div>`;
 }
 function wireDividas(){
-  // toggle modo Todas / Relatório mensal
   document.querySelectorAll("[data-div-modo]").forEach(b=>b.onclick=()=>{window._divModo=b.dataset.divModo;render();});
-  // navegador de mês (modo mensal)
   const stepMes=(delta)=>{const [y,m]=(window._divMesRef||(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"))).split("-").map(Number);let ny=y,nm=m+delta;if(nm<1){nm=12;ny--;}else if(nm>12){nm=1;ny++;}window._divMesRef=ny+"-"+String(nm).padStart(2,"0");render();};
   const bp=document.getElementById("btnMesPrev");if(bp)bp.onclick=()=>stepMes(-1);
   const bn=document.getElementById("btnMesNext");if(bn)bn.onclick=()=>stepMes(1);
   const bi=document.getElementById("btnImprimirRel");if(bi)bi.onclick=()=>window.print();
-  // botão nova dívida
   const btnNova=document.getElementById("btnNovaDiv");
-  if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;window._divTipo=window._divTipo||"unica";render();};
+  if(btnNova)btnNova.onclick=()=>{window._addingDiv=!window._addingDiv;window._divTipo=window._divTipo||"unica";window._divDirecao=window._divDirecao||"pagar";render();};
   document.querySelectorAll("[data-tipo-div]").forEach(b=>b.onclick=()=>{window._divTipo=b.dataset.tipoDiv;render();});
+  document.querySelectorAll("[data-div-direcao]").forEach(b=>b.onclick=()=>{window._divDirecao=b.dataset.divDirecao;render();});
   const btnSalvar=document.getElementById("btnSalvarDiv");
   if(btnSalvar)btnSalvar.onclick=async()=>{
-    const isCredor=isCredorMode();
     const myEmail=(session.user.email||"").toLowerCase();
-    const outroNome=document.getElementById("dv_credorNome").value.trim();
-    const outroEmail=document.getElementById("dv_credorEmail").value.trim().toLowerCase();
+    const outroNome=document.getElementById("dv_outroNome").value.trim()||"outra parte";
+    const outroEmail=document.getElementById("dv_outroEmail").value.trim().toLowerCase();
     const descricao=document.getElementById("dv_desc").value.trim();
     const valor=parseFloat((document.getElementById("dv_valor").value||"").replace(",","."));
     const tipo_divida=window._divTipo||"unica";
+    const direcao=window._divDirecao||"pagar";
     const mes_inicio=document.getElementById("dv_mesIni").value||null;
     const mesFimEl=document.getElementById("dv_mesFim");
     let mes_fim=mesFimEl?(mesFimEl.value||null):null;
@@ -1238,24 +1255,25 @@ function wireDividas(){
     if(!valor||valor<=0){alert("Coloque um valor válido.");return;}
     if(!mes_inicio){alert("Escolha o mês de entrada.");return;}
     if(tipo_divida==="fixa" && !mes_fim){alert("Fixa precisa do mês final pra saber quantas parcelas.");return;}
-    // monta credor/devedor conforme papel
+    // Direção decide quem é credor/devedor
     let credor_email, credor_nome, devedor_email, devedor_nome;
-    if(isCredor){
-      credor_email=myEmail; credor_nome=outroNome||"Credor";
-      devedor_email=outroEmail; devedor_nome=outroNome||"Devedor";
+    if(direcao==="pagar"){
+      // Eu pago pro outro: eu sou devedor, outro é credor
+      devedor_email=myEmail; devedor_nome="";
+      credor_email=outroEmail; credor_nome=outroNome;
     } else {
-      credor_email=outroEmail; credor_nome=outroNome||"Credor";
-      devedor_email=myEmail;   devedor_nome="Devedor";
+      // Outro me paga: outro é devedor, eu sou credor
+      devedor_email=outroEmail; devedor_nome=outroNome;
+      credor_email=myEmail; credor_nome="";
     }
     await ins("dividas",{credor_nome,credor_email,devedor_nome,devedor_email,descricao,valor,tipo_divida,mes_inicio,mes_fim,observacao});
-    // registrar o credor na lista pública (idempotente) pra o app detectar
-    try{await sb.from("app_credores").insert({email:credor_email,nome:credor_nome}).select();}catch(e){}
+    // Registrar AMBAS as partes na lista (pra o app poder detectar Talita quando ela logar)
+    try{await sb.from("app_credores").insert({email:outroEmail,nome:outroNome}).select();}catch(e){}
     window._addingDiv=false;
     await loadAll();
   };
-  // contestar
   document.querySelectorAll("[data-div-contest]").forEach(b=>b.onclick=async()=>{
-    const motivo=prompt("Por que você está contestando essa dívida? (será visível pra Talita)");
+    const motivo=prompt("Por que você está contestando essa dívida? (a outra parte verá o motivo)");
     if(motivo===null)return;
     await upd("dividas",b.dataset.divContest,{contestada:true,motivo_contestacao:motivo.trim()||null});
     await loadAll();
