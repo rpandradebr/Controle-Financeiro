@@ -1067,6 +1067,7 @@ function renderDivida(d,uid,_ignored,mesRef,direcao){
     <div class="acts">
       ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar baixa">↺</button>`:`<button data-div-pago="${d.id}" title="Dar baixa (pago)">✓</button>`}
       ${d.contestada?`<button data-div-descontest="${d.id}" title="Remover contestação">✕⚠</button>`:`<button data-div-contest="${d.id}" title="Contestar essa dívida">⚠</button>`}
+      ${podeExcluir?`<button data-div-inv="${d.id}" title="Inverter direção (trocar credor com devedor)">↔</button>`:""}
       ${podeExcluir?`<button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>`:""}
     </div>
   </div>`;
@@ -1289,6 +1290,17 @@ function wireDividas(){
   });
   document.querySelectorAll("[data-div-despago]").forEach(b=>b.onclick=async()=>{
     await upd("dividas",b.dataset.divDespago,{pago:false,data_pagto:null});
+    await loadAll();
+  });
+  document.querySelectorAll("[data-div-inv]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("Inverter direção desta dívida? (troca credor com devedor)"))return;
+    const d=dividas.find(x=>x.id===b.dataset.divInv);if(!d)return;
+    await upd("dividas",d.id,{
+      credor_email:d.devedor_email,credor_nome:d.devedor_nome,
+      devedor_email:d.credor_email,devedor_nome:d.credor_nome
+    });
+    // garante que o novo credor está na lista pública
+    if(d.devedor_email){try{await sb.from("app_credores").insert({email:d.devedor_email,nome:d.devedor_nome||"Credor"}).select();}catch(e){}}
     await loadAll();
   });
   document.querySelectorAll("[data-div-del]").forEach(b=>b.onclick=async()=>{
