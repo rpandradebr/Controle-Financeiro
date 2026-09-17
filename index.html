@@ -1162,6 +1162,13 @@ function viewDividas(){
   const noticeVazio=(dividas.length===0)
     ?`<div class="card wide"><div class="divida-notice">Cadastre aqui as dívidas entre você e a outra parte. Cada um pode lançar em qualquer direção — contas que você deve OU contas que a outra parte te deve. Quando ela também criar conta no app com o email dela, ela verá e poderá lançar também.</div></div>`
     :"";
+  const ativaPessoal=isCredor
+    ?`<div class="card wide" style="border:1px solid var(--accent);background:linear-gradient(180deg,#fff,#f2f9f5)">
+      <h3 style="color:var(--accent-dark);margin-top:0">🎯 Quer usar o app pra sua gestão financeira pessoal também?</h3>
+      <p class="help">Além das dívidas com a outra parte, o app tem controle completo: entradas, saídas, cartão de crédito, contas fixas, relatórios mensais e anuais. Ativa aqui pra liberar todas as abas.</p>
+      <button class="btn-add" id="btnAtivaPessoal">✓ Ativar minha gestão pessoal</button>
+    </div>`
+    :"";
 
   if(modo==="relatorios"){
     // Relatório do mês: filtra por dividaAtivaNoMes
@@ -1185,7 +1192,7 @@ function viewDividas(){
         ${pagos.length?`<div style="font-size:12px;color:var(--accent-dark);font-weight:600;margin:14px 0 6px">Já pago</div>${pagos.map(d=>renderDivida(d,uid,false,mesRef,dir)).join("")}`:""}`;
     };
     return `<div class="grid">
-      ${noticeVazio}
+      ${ativaPessoal}${noticeVazio}
       <div class="card wide">${modoTabs}
         <div class="mes-picker">
           <button id="btnMesPrev">‹</button>
@@ -1217,7 +1224,7 @@ function viewDividas(){
 
   // Modo Lançamentos
   return `<div class="grid">
-    ${noticeVazio}
+    ${ativaPessoal}${noticeVazio}
     <div class="card wide">${modoTabs}
       <div class="divida-subgrid">
         <div class="item pend"><small>A pagar</small><b>${fmt(totalAPagar)}</b></div>
@@ -1337,6 +1344,15 @@ function wireDividas(){
     await upd("dividas",b.dataset.divDespago,{pago:false,data_pagto:null});
     await loadAll();
   });
+  const btnAtivaP=document.getElementById("btnAtivaPessoal");
+  if(btnAtivaP)btnAtivaP.onclick=async()=>{
+    if(!confirm("Isso vai ativar todas as abas do app pra você (Painel, Lançamentos, Cartões, etc.). Confirma?"))return;
+    try{
+      await sb.from("contas").insert({nome:"Conta Principal",saldo_inicial:0}).select();
+      alert("✓ Pronto! Recarregando o app com todas as abas liberadas.");
+      location.reload();
+    }catch(e){alert("Erro ao ativar: "+e.message);}
+  };
   document.querySelectorAll("[data-div-inv]").forEach(b=>b.onclick=async()=>{
     if(!confirm("Inverter direção desta dívida? (troca credor com devedor)"))return;
     const d=dividas.find(x=>x.id===b.dataset.divInv);if(!d)return;
