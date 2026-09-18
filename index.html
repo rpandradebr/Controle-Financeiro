@@ -255,6 +255,19 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 
 
 
+
+.dash-hero{padding:26px;text-align:center;background:linear-gradient(135deg,#f7f5ef,#f0ede3);border-radius:14px;border:1px solid var(--line)}
+.dash-hero.pos{background:linear-gradient(135deg,#e8f5ee,#d1ecdb);border-color:#a8d5b8}
+.dash-hero.neg{background:linear-gradient(135deg,#fdecea,#f9d3ce);border-color:#f0b3ac}
+.dash-hero small{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.dash-hero-txt{font-family:'Fraunces',serif;font-size:20px;margin:10px 0 4px;color:var(--ink)}
+.dash-hero-val{font-family:'Fraunces',serif;font-size:44px;font-weight:500;display:block;margin-top:4px;line-height:1.1}
+.dash-hero.pos .dash-hero-val{color:var(--accent-dark)}
+.dash-hero.neg .dash-hero-val{color:var(--danger)}
+.dash-tipos{display:flex;gap:20px;flex-wrap:wrap;font-size:14px;padding:6px 0}
+.dash-tipos .tp{background:var(--bg);padding:10px 16px;border-radius:10px;border:1px solid var(--line)}
+.dash-tipos .tp b{font-family:'Fraunces',serif;font-size:20px;display:block;color:var(--ink)}
+.dash-tipos .tp small{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em}
 .tipo-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;letter-spacing:.03em;text-transform:uppercase;margin-right:6px;vertical-align:middle}
 .tipo-badge.unica{background:var(--bg);color:var(--ink-soft);border:1px solid var(--line)}
 .tipo-badge.fixa{background:var(--amber-soft);color:var(--amber)}
@@ -399,7 +412,7 @@ const hoje=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth(
 const brDate=d=>(d||"").split("-").reverse().join("/");
 
 let sb=null, session=null, signupMode=false;
-let contas=[], cartoes=[], categorias=[], txs=[], recorrentes=[], dividas=[], credores=[];
+let contas=[], cartoes=[], categorias=[], txs=[], recorrentes=[], dividas=[], credores=[], baixas=[];
 const N=new Date(); let ano=N.getFullYear(), mes=N.getMonth(), view="dashboard";
 let charts=[];
 
@@ -449,7 +462,7 @@ document.getElementById("btnLogout").onclick=async()=>{ await sb.auth.signOut();
 /* ---------- data ---------- */
 async function loadAll(){
   const uid=session.user.id;
-  const [c1,c2,c3,c4,c5,c6,c7]=await Promise.all([
+  const [c1,c2,c3,c4,c5,c6,c7,c8]=await Promise.all([
     sb.from("contas").select("*").order("criado_em"),
     sb.from("cartoes").select("*").order("criado_em"),
     sb.from("categorias").select("*").order("criado_em"),
@@ -457,8 +470,9 @@ async function loadAll(){
     sb.from("recorrentes").select("*").order("criado_em"),
     sb.from("dividas").select("*").order("criado_em",{ascending:false}),
     sb.from("app_credores").select("*"),
+    sb.from("divida_baixas").select("*"),
   ]);
-  contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[]; credores=c7.data||[];
+  contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[]; credores=c7.data||[]; baixas=c8.data||[];
   render();
 }
 const ins=(t,row)=>sb.from(t).insert({...row,user_id:session.user.id});
@@ -558,7 +572,16 @@ function render(){
   if(credorMode && view!=="dividas")view="dividas";
   buildDrawerMenu();
   const ti=TABS.find(x=>x[0]===view);
-  const secLabel=(credorMode && view==="dividas")?"Contas a receber":(ti?ti[1]:"");
+  let secLabel=ti?ti[1]:"";
+  if(view==="dividas"){
+    const myEm=(session&&session.user&&session.user.email||"").toLowerCase();
+    const d=dividas.find(dv=>((dv.credor_email||"").toLowerCase()!==myEm)||((dv.devedor_email||"").toLowerCase()!==myEm));
+    if(d){
+      const iCred=(d.credor_email||"").toLowerCase()===myEm;
+      const outro=iCred?(d.devedor_nome||"a outra parte"):(d.credor_nome||"a outra parte");
+      secLabel="Dívidas com "+outro;
+    }else if(credorMode){secLabel="Contas a receber";}
+  }
   document.getElementById("sectionTitle").textContent=secLabel;
   document.querySelectorAll("#drawerMenu button").forEach(b=>b.classList.toggle("active",b.dataset.v===view));
   const subRel=window._relSub||"mensal";
@@ -1030,12 +1053,15 @@ function wireRelatorios(){
   const yn=document.querySelector("[data-rel-ynext]");if(yn)yn.onclick=()=>{ano++;render();};
 }
 function renderDivida(d,uid,_ignored,mesRef,direcao){
-  // direcao: "pagar" (eu devo pra outro) | "receber" (outro me deve)
   const podeExcluir=(d.user_id===uid);
   const tipo=d.tipo_divida||"unica";
   const badge=`<span class="tipo-badge ${tipo}">${tipo==="unica"?"única":tipo}</span>`;
-  let periodo="";
-  let totalCalc="";
+  // Status usa baixas por mês
+  let paga=false;
+  if(mesRef){paga=dividaPagaNoMes(d,mesRef);}
+  else{const st=statusGeral(d);paga=(st.s==="paga");}
+  const stateCls=paga?"pago":(d.contestada?"contest":"");
+  let periodo="",totalCalc="";
   if(mesRef){
     if(tipo==="fixa" && d.mes_inicio && d.mes_fim){
       const atual=mesesEntre(d.mes_inicio,mesRef);
@@ -1050,27 +1076,57 @@ function renderDivida(d,uid,_ignored,mesRef,direcao){
     else if(d.mes_inicio){periodo=`desde ${fmtMes(d.mes_inicio)}`;}
     if(tipo==="fixa" && d.mes_inicio && d.mes_fim){
       const n=mesesEntre(d.mes_inicio,d.mes_fim);
-      if(n && n>1){totalCalc=`<span class="totalcalc">${fmt(d.valor)}/mês × ${n} = ${fmt(d.valor*n)} total</span>`;}
+      if(n && n>1){
+        const st=statusGeral(d);
+        const parcInfo=st.s==="parcial"?` · ${st.pagas}/${st.total} pagas`:(st.s==="paga"?" · quitada":"");
+        totalCalc=`<span class="totalcalc">${fmt(d.valor)}/mês × ${n} = ${fmt(d.valor*n)} total${parcInfo}</span>`;
+      }
     }else if(tipo==="recorrente"){
-      totalCalc=`<span class="totalcalc">~${fmt(d.valor)}/mês (variável)</span>`;
+      const nBx=numBaixasDivida(d);
+      totalCalc=`<span class="totalcalc">~${fmt(d.valor)}/mês${nBx>0?` · ${nBx} pagamento(s) registrado(s)`:""}</span>`;
     }
   }
-  const pagoStr=(d.pago&&d.data_pagto)?`pago em ${brDate(d.data_pagto)}`:"";
-  // Nome da outra parte depende da direção
+  const baixaInfo=mesRef?baixaMes(d.id,mesRef):null;
+  const pagoStr=paga?(baixaInfo?`pago em ${brDate(baixaInfo.data_pagto)}`:(d.data_pagto?`pago em ${brDate(d.data_pagto)}`:"")):"";
   const outraParte=(direcao==="receber")?(d.devedor_nome||d.devedor_email||"outra parte"):(d.credor_nome||d.credor_email||"outra parte");
   const meta=[outraParte,periodo,pagoStr,d.observacao].filter(Boolean).join(" · ");
   const contestBadge=d.contestada?`<div class="contest-badge">⚠ contestada${d.motivo_contestacao?`<small>"${d.motivo_contestacao}"</small>`:""}</div>`:"";
-  const stateCls=d.pago?"pago":(d.contestada?"contest":"");
+  // Botão de baixa
+  let btnBx="";
+  if(mesRef){
+    // contexto mensal: baixa só do mês
+    btnBx=paga
+      ?`<button data-desbaixa="${d.id}" data-mes="${mesRef}" title="Desmarcar baixa deste mês">↺</button>`
+      :`<button data-baixa="${d.id}" data-mes="${mesRef}" title="Dar baixa neste mês">✓</button>`;
+  } else if(tipo==="unica" && d.mes_inicio){
+    // única na visão geral: baixa direta
+    btnBx=paga
+      ?`<button data-desbaixa="${d.id}" data-mes="${d.mes_inicio}" title="Desmarcar baixa">↺</button>`
+      :`<button data-baixa="${d.id}" data-mes="${d.mes_inicio}" title="Dar baixa">✓</button>`;
+  }
+  // (fixa/recorrente na visão geral: sem botão, obriga usar Relatórios)
   return `<div class="divida-item ${stateCls}">
     <div class="mid"><b>${badge}${d.descricao}</b><small>${meta}</small>${totalCalc}${contestBadge}</div>
     <b class="val">${fmt(d.valor)}</b>
     <div class="acts">
-      ${d.pago?`<button data-div-despago="${d.id}" title="Desmarcar baixa">↺</button>`:`<button data-div-pago="${d.id}" title="Dar baixa (pago)">✓</button>`}
+      ${btnBx}
       ${d.contestada?`<button data-div-descontest="${d.id}" title="Remover contestação">✕⚠</button>`:`<button data-div-contest="${d.id}" title="Contestar essa dívida">⚠</button>`}
       ${podeExcluir?`<button data-div-inv="${d.id}" title="Inverter direção (trocar credor com devedor)">↔</button>`:""}
       ${podeExcluir?`<button class="del-btn" data-div-del="${d.id}" title="Excluir">🗑</button>`:""}
     </div>
   </div>`;
+}
+function baixaMes(divId,mesRef){return baixas.find(b=>b.divida_id===divId && b.mes_ref===mesRef);}
+function dividaPagaNoMes(d,mesRef){return !!baixaMes(d.id,mesRef);}
+function numBaixasDivida(d){return baixas.filter(b=>b.divida_id===d.id).length;}
+function statusGeral(d){
+  const tipo=d.tipo_divida||"unica";
+  const n=numBaixasDivida(d);
+  if(tipo==="unica"){if(n>0)return{s:"paga"};return{s:d.contestada?"contest":"pendente"};}
+  const total=mesesEntre(d.mes_inicio,d.mes_fim||d.mes_inicio)||1;
+  if(n>=total)return{s:"paga"};
+  if(n>0)return{s:"parcial",pagas:n,total:total};
+  return{s:d.contestada?"contest":"pendente"};
 }
 function fmtMes(ym){if(!ym)return"";const p=ym.split("-");if(p.length<2)return"";return MESES[+p[1]-1].toLowerCase()+"/"+p[0].slice(-2);}
 function mesesEntre(ini,fim){if(!ini||!fim)return null;const [iy,im]=ini.split("-").map(Number);const [fy,fm]=fim.split("-").map(Number);return (fy-iy)*12+(fm-im)+1;}
@@ -1127,7 +1183,8 @@ function viewDividas(){
   if(saldo>0){saldoTxt=`${outroNome} te deve <b class="pos">${fmt(saldo)}</b>`;}
   else if(saldo<0){saldoTxt=`Você deve <b class="neg">${fmt(-saldo)}</b> pra ${outroNome}`;}
   else{saldoTxt=`Tudo quitado — sem saldo em aberto`;}
-  const modoTabs=`<div class="tipo-tabs" style="max-width:340px;margin:0 auto 16px">
+  const modoTabs=`<div class="tipo-tabs" style="max-width:460px;margin:0 auto 16px">
+    <button data-div-modo="dashboard" class="${modo==="dashboard"?"active":""}">📊 Painel</button>
     <button data-div-modo="lancamentos" class="${modo==="lancamentos"?"active":""}">📝 Lançamentos</button>
     <button data-div-modo="relatorios" class="${modo==="relatorios"?"active":""}">📑 Relatórios</button>
   </div>`;
@@ -1169,6 +1226,77 @@ function viewDividas(){
       <button class="btn-add" id="btnAtivaPessoal">✓ Ativar minha gestão pessoal</button>
     </div>`
     :"";
+
+  // Modo Painel (Dashboard)
+  if(modo==="dashboard"){
+    // KPIs considerando baixas por mês
+    const somaPendente=arr=>arr.filter(d=>!d.contestada).reduce((s,d)=>{
+      const tipo=d.tipo_divida||"unica";
+      if(tipo==="unica"){return dividaPagaNoMes(d,d.mes_inicio)?s:s+(+d.valor||0);}
+      const total=mesesEntre(d.mes_inicio,d.mes_fim||d.mes_inicio)||1;
+      const pagas=numBaixasDivida(d);
+      return s+(+d.valor||0)*Math.max(0,total-pagas);
+    },0);
+    const somaPago=arr=>arr.reduce((s,d)=>{const n=numBaixasDivida(d);return s+(+d.valor||0)*n;},0);
+    const totalAPagarD=somaPendente(aPagar);
+    const totalAReceberD=somaPendente(aReceber);
+    const jaPaguei=somaPago(aPagar);
+    const jaRecebi=somaPago(aReceber);
+    const saldoD=totalAReceberD-totalAPagarD;
+    let saldoTxt,saldoCls;
+    if(saldoD>0){saldoTxt=`${outroLabel} te deve`;saldoCls="pos";}
+    else if(saldoD<0){saldoTxt=`Você deve pra ${outroLabel}`;saldoCls="neg";}
+    else{saldoTxt="Tudo quitado";saldoCls="";}
+    // Próximos vencimentos (mês atual + 2 seguintes)
+    const proxMeses=[];
+    for(let i=0;i<3;i++){const dt=new Date(now.getFullYear(),now.getMonth()+i,1);proxMeses.push(dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0"));}
+    const proximosArr=[];
+    for(const mm of proxMeses){
+      const ativasNoMes=dividas.filter(d=>dividaAtivaNoMes(d,mm)&&!dividaPagaNoMes(d,mm)&&!d.contestada);
+      for(const d of ativasNoMes){
+        const dir=(d.credor_email||"").toLowerCase()===myEmail?"receber":"pagar";
+        proximosArr.push({d,mm,dir});
+      }
+    }
+    // Distribuição por tipo (só ativas)
+    const ativasTd=dividas.filter(d=>statusGeral(d).s!=="paga");
+    const nUn=ativasTd.filter(d=>(d.tipo_divida||"unica")==="unica").length;
+    const nFx=ativasTd.filter(d=>d.tipo_divida==="fixa").length;
+    const nRc=ativasTd.filter(d=>d.tipo_divida==="recorrente").length;
+    return `<div class="grid">
+      ${ativaPessoal}${noticeVazio}
+      <div class="card wide">${modoTabs}
+        <div class="dash-hero ${saldoCls}">
+          <small>Saldo consolidado</small>
+          <div class="dash-hero-txt">${saldoTxt}</div>
+          <b class="dash-hero-val">${saldoD===0?"—":fmt(Math.abs(saldoD))}</b>
+        </div>
+        <div class="divida-subgrid" style="margin-top:16px">
+          <div class="item pend"><small>A pagar total</small><b>${fmt(totalAPagarD)}</b></div>
+          <div class="item paga"><small>A receber total</small><b>${fmt(totalAReceberD)}</b></div>
+          <div class="item"><small>Já paguei</small><b>${fmt(jaPaguei)}</b></div>
+          <div class="item"><small>Já recebi</small><b>${fmt(jaRecebi)}</b></div>
+        </div>
+      </div>
+      <div class="card wide"><h3>Próximos vencimentos (3 meses)</h3>
+        ${proximosArr.length===0?'<div class="empty">Nada nos próximos 3 meses.</div>':proximosArr.map(p=>{
+          const dir=p.dir;const d=p.d;
+          return `<div class="divida-item" style="border-left-color:${dir==="pagar"?"var(--danger)":"var(--accent)"}">
+            <div class="mid"><b>${dir==="pagar"?"→":"←"} ${d.descricao}</b><small>${fmtMes(p.mm)} · ${dir==="pagar"?"você paga":"você recebe"} · ${outroLabel}</small></div>
+            <b class="val ${dir==="pagar"?"neg":"pos"}">${fmt(d.valor)}</b>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="card wide"><h3>Dívidas ativas (não quitadas)</h3>
+        <div class="dash-tipos">
+          <div class="tp"><small>Únicas</small><b>${nUn}</b></div>
+          <div class="tp"><small>Fixas</small><b>${nFx}</b></div>
+          <div class="tp"><small>Recorrentes</small><b>${nRc}</b></div>
+          <div class="tp" style="background:var(--accent-soft);border-color:var(--accent)"><small>Total ativo</small><b>${ativasTd.length}</b></div>
+        </div>
+      </div>
+    </div>`;
+  }
 
   if(modo==="relatorios"){
     // Relatório do mês: filtra por dividaAtivaNoMes
@@ -1251,14 +1379,12 @@ function wireDividas(){
   const btnBaixaMes=document.getElementById("btnBaixaMes");
   if(btnBaixaMes)btnBaixaMes.onclick=async()=>{
     const mesRef=window._divMesRef||(new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"));
-    const ativas=dividas.filter(d=>dividaAtivaNoMes(d,mesRef)&&!d.pago&&!d.contestada);
+    const ativas=dividas.filter(d=>dividaAtivaNoMes(d,mesRef)&&!dividaPagaNoMes(d,mesRef)&&!d.contestada);
     if(ativas.length===0){alert("Não há dívidas pendentes neste mês.");return;}
     const total=ativas.reduce((s,d)=>s+(+d.valor||0),0);
-    const temFixa=ativas.some(d=>(d.tipo_divida||"unica")!=="unica");
-    let msg=`Dar baixa em ${ativas.length} dívida(s) pendente(s) deste mês (total ${fmt(total)})?`;
-    if(temFixa)msg+="\n\n⚠ Atenção: dívidas fixas/recorrentes serão marcadas como pagas por INTEIRO (não só a parcela do mês).";
-    if(!confirm(msg))return;
-    for(const d of ativas){await upd("dividas",d.id,{pago:true,data_pagto:hoje()});}
+    if(!confirm(`Dar baixa em ${ativas.length} dívida(s) pendente(s) deste mês (total ${fmt(total)})?\n\nApenas ${MESES_L[+mesRef.split("-")[1]-1]} será marcado como pago — as outras parcelas ficam intactas.`))return;
+    const inserts=ativas.map(d=>({divida_id:d.id,mes_ref:mesRef,data_pagto:hoje()}));
+    try{await sb.from("divida_baixas").insert(inserts);}catch(e){alert("Erro: "+e.message);}
     await loadAll();
   };
   // Excluir tudo do mês
@@ -1336,12 +1462,16 @@ function wireDividas(){
     await upd("dividas",b.dataset.divDescontest,{contestada:false,motivo_contestacao:null});
     await loadAll();
   });
-  document.querySelectorAll("[data-div-pago]").forEach(b=>b.onclick=async()=>{
-    await upd("dividas",b.dataset.divPago,{pago:true,data_pagto:hoje()});
+  // Dar baixa (baixa mensal individual)
+  document.querySelectorAll("[data-baixa]").forEach(b=>b.onclick=async()=>{
+    const divId=b.dataset.baixa;const mes=b.dataset.mes;
+    if(!mes){alert("Dívida sem mês definido.");return;}
+    try{await sb.from("divida_baixas").insert({divida_id:divId,mes_ref:mes,data_pagto:hoje()});}catch(e){alert("Erro: "+e.message);return;}
     await loadAll();
   });
-  document.querySelectorAll("[data-div-despago]").forEach(b=>b.onclick=async()=>{
-    await upd("dividas",b.dataset.divDespago,{pago:false,data_pagto:null});
+  document.querySelectorAll("[data-desbaixa]").forEach(b=>b.onclick=async()=>{
+    const divId=b.dataset.desbaixa;const mes=b.dataset.mes;
+    await sb.from("divida_baixas").delete().eq("divida_id",divId).eq("mes_ref",mes);
     await loadAll();
   });
   const btnAtivaP=document.getElementById("btnAtivaPessoal");
