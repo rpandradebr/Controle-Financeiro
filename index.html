@@ -333,6 +333,33 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 
 .tx .edit{background:transparent;border:none;cursor:pointer;color:var(--ink-soft);padding:4px 6px;border-radius:6px;font-size:14px;margin-right:2px}
 .tx .edit:hover{background:var(--amber-soft);color:var(--amber)}
+
+.fat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.fat-pill{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-left:3px solid var(--danger)}
+.fat-pill.paga{border-left-color:var(--accent);opacity:.75}
+.fat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.fat-head b{font-size:14px}
+.fat-val{display:block;font-family:'Fraunces',serif;font-size:24px;font-weight:500;margin:4px 0}
+.fat-pill small{font-size:11.5px;color:var(--ink-soft);display:block}
+/* Cartões maiores e com melhor hierarquia */
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
+.cbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
+.cbox.pago-row{opacity:.72}
+.chead{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.chead .chip{width:44px;height:32px;border-radius:8px;background:linear-gradient(135deg,#e8b04a,#b9810f);color:#fff;display:grid;place-items:center;font-size:17px;flex-shrink:0}
+.chead b{display:block;font-family:'Fraunces',serif;font-size:17px;font-weight:600}
+.chead small{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+.cstats{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.cstats > div{background:var(--bg);border-radius:10px;padding:12px 14px}
+.cstats small{display:block;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:4px}
+.cstats b{font-family:'Fraunces',serif;font-size:19px;font-weight:500}
+.citems{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;padding-right:4px}
+.citem{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:9px;font-size:13.5px}
+.citem > span:first-child{font-size:17px;flex-shrink:0}
+.citem > div{flex:1;min-width:0}
+.citem b:first-child{display:block;font-size:13.5px;font-weight:600}
+.citem small{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+.citem > b:last-child{font-family:'Fraunces',serif;font-size:16px;font-weight:500;white-space:nowrap}
 .gr-badge{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent-dark);margin-left:4px;vertical-align:middle;white-space:nowrap}
 .gr-badge.sem{background:var(--bg);color:var(--ink-soft);border:1px dashed var(--line)}
 .tx.pago-row{opacity:.55}
@@ -927,6 +954,18 @@ function viewLancamentos(){
         <button class="btn-add" id="btnLanc">+ Lançar</button>
       </div>
     </div>
+    ${cartoes.length>0?`<div class="card wide"><h3>💳 Faturas que vencem em ${ymSel()}</h3>
+      <div class="fat-grid">
+        ${cartoes.map(card=>{
+          const vencCh=ch.filter(c=>c.cartao_id===card.id&&c.vencimento===ymSel());
+          const tV=vencCh.reduce((s,c)=>s+c._valor,0);
+          const vencPagas=vencCh.filter(c=>{const tx=txs.find(t=>t.id===c.id);return tx&&tx.pago;});
+          const paga=vencCh.length>0&&vencPagas.length===vencCh.length;
+          const uso=card.limite?Math.min(100,tV/card.limite*100):0;
+          return `<div class="fat-pill ${paga?"paga":""}"><div class="fat-head"><b>${card.nome}</b>${paga?'<span class="gr-badge">PAGA</span>':""}</div><b class="fat-val ${paga?"pos":"neg"}">${fmt(tV)}</b><small>${vencCh.length} compra(s) · vence dia ${card.vencimento}</small>${card.limite?`<div class="prog" style="margin-top:6px"><div class="${uso>90?"danger":uso>70?"warn":""}" style="width:${uso}%"></div></div>`:""}</div>`;
+        }).join("")}
+      </div>
+    </div>`:""}
     <div class="card wide"><h3>Lançamentos de ${ymSel()} <button class="btn-ghost" id="btnExpCSV" style="float:right;font-size:12px;padding:6px 12px">⬇ Exportar CSV</button></h3>${lista.length?`<div class="tx-list">${rows}</div>`:'<div class="empty">Nenhum lançamento neste mês.</div>'}</div>
   </div>`;
 }
