@@ -796,6 +796,13 @@ function viewDashboard(){
       <div class="prog-meta"><span><b>${(d.comp*100).toFixed(0)}%</b> da renda comprometida</span><span>Gasto bruto do mês: <b>${fmt(d.gastoBruto)}</b></span></div>
     </div>
     <div class="card"><h3>Gastos por categoria</h3><div class="chart-wrap"><canvas id="chGasto"></canvas></div>${rankList(d.rankGasto.slice(0,6))}</div>
+    <div class="card"><h3>Gastos por grupo</h3>${(()=>{
+      // Agrupa d.rankGasto por categoria.grupo
+      const porGrupo={};
+      (d.rankGasto||[]).forEach(r=>{const cat=categorias.find(c=>c.id===r.id);const g=(cat&&cat.grupo)||"(sem grupo)";porGrupo[g]=(porGrupo[g]||0)+r.valor;});
+      const arr=Object.entries(porGrupo).map(([g,v])=>({nome:g,valor:v,emoji:"📦"})).sort((a,b)=>b.valor-a.valor);
+      return arr.length?rankList(arr):'<div class="empty">Sem dados.</div>';
+    })()}</div>
     <div class="card"><h3>Rendas por categoria</h3>${rankList(d.rankRenda.slice(0,8))}</div>
     <div class="card wide"><h3>Saldo por conta</h3><div class="contas-row">
       ${sc.map(c=>`<div class="conta-pill"><small>${c.nome}</small><b class="${c.saldo>=0?"pos":"neg"}">${fmt(c.saldo)}</b></div>`).join("")}
@@ -1734,15 +1741,25 @@ function viewConfig(){
       </div>
       <div class="cat-form">
         <input class="em-input" id="cat_emoji" value="${defaultEmoji}" maxlength="4" title="Emoji">
-        <input class="name" id="cat_nome" placeholder="Nome da categoria (ex: Combustível, Streaming, Dividendos)">
+        <input class="name" id="cat_nome" placeholder="Nome (ex: Combustível, Energia)">
+        <input id="cat_grupo" list="gruposList" placeholder="Grupo (ex: Carro, Casa)" style="width:180px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14px;outline:none">
         <button class="add" id="addCat" title="Adicionar">+</button>
       </div>
-      <small style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:6px">Sugestões de emoji — toca pra escolher (ou digita o seu)</small>
+      <datalist id="gruposList">${[...new Set(categorias.map(c=>c.grupo).filter(Boolean))].map(g=>`<option value="${g}">`).join("")}</datalist>
+      <small style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:6px">Grupo agrupa categorias no relatório. Sugestões de emoji:</small>
       <div class="em-suggest">
         ${emojiList.map(e=>`<button data-emoji="${e}">${e}</button>`).join("")}
       </div>
       <div class="cat-list">
-        ${cats.length===0?'<div class="empty">Nenhuma categoria neste grupo.</div>':cats.map(c=>`<div class="cat-item ${catTab==='receita'?'rec':''}"><span class="em">${c.emoji}</span><span>${c.nome}</span><div class="acts"><button data-cat-edit="${c.id}" title="Editar">✏️</button><button class="del-btn" data-cat-del="${c.id}" title="Excluir">✕</button></div></div>`).join("")}
+        ${cats.length===0?'<div class="empty">Nenhuma categoria neste grupo.</div>':(()=>{
+          // Agrupa por grupo
+          const porGrupo={};
+          cats.forEach(c=>{const g=c.grupo||"(sem grupo)";if(!porGrupo[g])porGrupo[g]=[];porGrupo[g].push(c);});
+          return Object.entries(porGrupo).sort((a,b)=>a[0].localeCompare(b[0])).map(([grupo,arr])=>`<div style="width:100%;margin-top:6px">
+            <small style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;font-weight:600;display:block;margin-bottom:4px">${grupo}</small>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map(c=>`<div class="cat-item ${catTab==="receita"?"rec":""}"><span class="em">${c.emoji}</span><span>${c.nome}</span><div class="acts"><button data-cat-edit="${c.id}" title="Editar">✏️</button><button class="del-btn" data-cat-del="${c.id}" title="Excluir">✕</button></div></div>`).join("")}</div>
+          </div>`).join("");
+        })()}
       </div>
     </div>
 
@@ -1912,8 +1929,9 @@ function wireConfig(){
   document.getElementById("addCat").onclick=async()=>{
     const nome=document.getElementById("cat_nome").value.trim();
     const emoji=document.getElementById("cat_emoji").value.trim()||((window._catTab||"despesa")==="despesa"?"🏷️":"💰");
+    const grupo=document.getElementById("cat_grupo").value.trim()||null;
     if(!nome){alert("Coloque um nome.");return;}
-    await ins("categorias",{tipo:window._catTab||"despesa",nome,emoji});
+    await ins("categorias",{tipo:window._catTab||"despesa",nome,emoji,grupo});
     document.getElementById("cat_nome").value="";
     await loadAll();
   };
@@ -1925,7 +1943,9 @@ function wireConfig(){
     if(novoNome===null)return;
     const novoEmoji=prompt("Emoji da categoria (cola ou digita um emoji):",cat.emoji);
     if(novoEmoji===null)return;
-    await upd("categorias",id,{nome:novoNome.trim()||cat.nome,emoji:novoEmoji.trim()||cat.emoji});
+    const novoGrupo=prompt("Grupo (ex: Carro, Casa, Alimentação). Deixe vazio pra não agrupar:",cat.grupo||"");
+    if(novoGrupo===null)return;
+    await upd("categorias",id,{nome:novoNome.trim()||cat.nome,emoji:novoEmoji.trim()||cat.emoji,grupo:novoGrupo.trim()||null});
     await loadAll();
   });
   document.querySelectorAll("[data-cat-del]").forEach(b=>b.onclick=async()=>{if(confirm("Excluir esta categoria?")){await del("categorias",b.dataset.catDel);await loadAll();}});
