@@ -548,7 +548,51 @@ async function loadAll(){
     sb.from("divida_baixas").select("*"),
   ]);
   contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[]; credores=c7.data||[]; baixas=c8.data||[];
+  // AUTO-LANÇAR recorrentes FIXAS do mês atual (sem perguntar)
+  await autoLancarFixas();
   render();
+}
+async function autoLancarFixas(){
+  try{
+    const agora=new Date();
+    const ymAtual=agora.getFullYear()+"-"+String(agora.getMonth()+1).padStart(2,"0");
+    const pend=(recorrentes||[]).filter(r=>{
+      if(r.ativo===false)return false;
+      if(!r.fixo)return false; // só fixas; variáveis exigem confirmação
+      // já lançada este mês?
+      const ja=(txs||[]).find(t=>t.recorrente_id===r.id && (t.data||"").startsWith(ymAtual));
+      if(ja)return false;
+      // respeitar parcelas totais (se definido)
+      if(r.parcelas_total && r.parcelas_total>0){
+        const qtdLancadas=(txs||[]).filter(t=>t.recorrente_id===r.id).length;
+        if(qtdLancadas>=r.parcelas_total)return false;
+      }
+      return true;
+    });
+    if(pend.length===0)return;
+    // Data: usa o dia da recorrente no mês atual, limitado a 28
+    const diaBase=d=>String(Math.min(28,Math.max(1,d||1))).padStart(2,"0");
+    const inserts=pend.map(r=>({
+      user_id:session.user.id,
+      tipo:r.tipo,
+      data:ymAtual+"-"+diaBase(r.dia),
+      valor:+r.valor||0,
+      categoria_id:r.categoria_id,
+      conta_id:r.tipo==="cartao"?null:r.conta_id,
+      cartao_id:r.tipo==="cartao"?r.cartao_id:null,
+      parcelas:r.tipo==="cartao"?(r.parcelas||1):null,
+      descricao:r.descricao,
+      recorrente_id:r.id
+    }));
+    const {data,error}=await sb.from("transacoes").insert(inserts).select();
+    if(error){console.warn("autoLancarFixas erro:",error);return;}
+    if(data && data.length){
+      // recarregar txs sem loop infinito
+      const {data:tnew}=await sb.from("transacoes").select("*").order("data",{ascending:false});
+      txs=tnew||[];
+      console.log("Auto-lançadas "+data.length+" recorrente(s) fixa(s).");
+    }
+  }catch(e){console.warn("autoLancarFixas exception:",e);}
 }
 const ins=(t,row)=>sb.from(t).insert({...row,user_id:session.user.id});
 const upd=(t,id,row)=>sb.from(t).update(row).eq("id",id);
