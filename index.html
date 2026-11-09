@@ -433,6 +433,8 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
           <label>Categoria<select id="ed_cat"></select></label>
           <label>Descrição<input id="ed_desc"></label>
           <label>Beneficiário/Pagador<input id="ed_parte"></label>
+          <label>Grupo <small style="font-weight:400;color:var(--ink-soft);font-size:11px">(ex: Casa, Carro)</small><input id="ed_grupo" list="gruposEdList"></label>
+          <datalist id="gruposEdList"></datalist>
         </div>
       </div>
       <div class="ia-foot">
@@ -797,11 +799,12 @@ function viewDashboard(){
     </div>
     <div class="card"><h3>Gastos por categoria</h3><div class="chart-wrap"><canvas id="chGasto"></canvas></div>${rankList(d.rankGasto.slice(0,6))}</div>
     <div class="card"><h3>Gastos por grupo</h3>${(()=>{
-      // Agrupa d.rankGasto por categoria.grupo
+      // Agrupa por campo "grupo" no lançamento (despesa direta + cartão do mês)
       const porGrupo={};
-      (d.rankGasto||[]).forEach(r=>{const cat=categorias.find(c=>c.id===r.id);const g=(cat&&cat.grupo)||"(sem grupo)";porGrupo[g]=(porGrupo[g]||0)+r.valor;});
+      txs.filter(t=>t.tipo==="despesa"&&ym(t.data)===ymSel()).forEach(t=>{const g=(t.grupo||"").trim()||"(sem grupo)";porGrupo[g]=(porGrupo[g]||0)+(+t.valor||0);});
+      allCharges().filter(c=>c.competencia===ymSel()).forEach(c=>{const g=(c.grupo||"").trim()||"(sem grupo)";porGrupo[g]=(porGrupo[g]||0)+c._valor;});
       const arr=Object.entries(porGrupo).map(([g,v])=>({nome:g,valor:v,emoji:"📦"})).sort((a,b)=>b.valor-a.valor);
-      return arr.length?rankList(arr):'<div class="empty">Sem dados.</div>';
+      return arr.length?rankList(arr):'<div class="empty">Cadastre o grupo ao lançar.</div>';
     })()}</div>
     <div class="card"><h3>Rendas por categoria</h3>${rankList(d.rankRenda.slice(0,8))}</div>
     <div class="card wide"><h3>Saldo por conta</h3><div class="contas-row">
@@ -913,6 +916,8 @@ function viewLancamentos(){
         </div>
         <label id="lblParc" class="hidden">Em quantas parcelas?<input type="number" min="2" id="f_parc" value="2"></label>
         <label>Beneficiário/Pagador<input id="f_parte" placeholder="opcional"></label>
+        <label>Grupo <small style="font-weight:400;color:var(--ink-soft);font-size:11px">(ex: Casa, Carro, Lazer)</small><input id="f_grupo" list="gruposLancList" placeholder="opcional"></label>
+        <datalist id="gruposLancList">${[...new Set((txs||[]).map(t=>t.grupo).filter(Boolean))].map(g=>`<option value="${g}">`).join("")}</datalist>
         <label class="wide">Descrição<input id="f_desc" placeholder="opcional"></label>
         <button class="btn-add" id="btnLanc">+ Lançar</button>
       </div>
@@ -1824,7 +1829,7 @@ function wireLanc(){
     const valor=parseFloat((document.getElementById("f_valor").value||"").replace(",","."));
     const categoria_id=document.getElementById("f_cat").value;
     if(!valor||!categoria_id){alert("Preencha valor e categoria.");return;}
-    const base={tipo:lancTipo,data:document.getElementById("f_data").value,valor,categoria_id,descricao:document.getElementById("f_desc").value,parte:document.getElementById("f_parte").value};
+    const base={tipo:lancTipo,data:document.getElementById("f_data").value,valor,categoria_id,descricao:document.getElementById("f_desc").value,parte:document.getElementById("f_parte").value,grupo:(document.getElementById("f_grupo").value||"").trim()||null};
     if(lancTipo==="cartao"){
       const cartao_id=document.getElementById("f_cartao").value;
       if(!cartao_id){alert("Cadastre um cartão em Config.");return;}
@@ -1844,6 +1849,9 @@ function wireLanc(){
     document.getElementById("ed_valor").value=t.valor||"";
     document.getElementById("ed_desc").value=t.descricao||"";
     document.getElementById("ed_parte").value=t.parte||"";
+    document.getElementById("ed_grupo").value=t.grupo||"";
+    const dl=document.getElementById("gruposEdList");
+    dl.innerHTML=[...new Set((txs||[]).map(x=>x.grupo).filter(Boolean))].map(g=>`<option value="${g}">`).join("");
     const selCat=document.getElementById("ed_cat");
     const cats=categorias.filter(c=>c.tipo===(t.tipo==="cartao"?"despesa":t.tipo));
     selCat.innerHTML=cats.map(c=>`<option value="${c.id}" ${c.id===t.categoria_id?"selected":""}>${c.emoji} ${c.nome}</option>`).join("");
@@ -1857,7 +1865,8 @@ function wireLanc(){
         valor:parseFloat((document.getElementById("ed_valor").value||"").replace(",",".")) ,
         categoria_id:document.getElementById("ed_cat").value,
         descricao:document.getElementById("ed_desc").value,
-        parte:document.getElementById("ed_parte").value
+        parte:document.getElementById("ed_parte").value,
+        grupo:(document.getElementById("ed_grupo").value||"").trim()||null
       };
       if(!upd_data.valor||upd_data.valor<=0){alert("Valor inválido");return;}
       try{await upd("transacoes",id,upd_data);closeIt();await loadAll();}catch(e){alert("Erro: "+e.message);}
