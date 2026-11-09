@@ -1893,6 +1893,26 @@ function drawDashCharts(){
     const ctx=document.getElementById("chGasto");
     charts.push(new Chart(ctx,{type:"doughnut",data:{labels:d.rankGasto.map(x=>x.nome),datasets:[{data:d.rankGasto.map(x=>x.valor),backgroundColor:d.rankGasto.map((_,i)=>COLORS[i%COLORS.length]),borderWidth:0}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>" "+fmt(c.raw)}}},cutout:"58%",maintainAspectRatio:false}}));
   }
+  // Filtros de movimentações
+  document.querySelectorAll("[data-dash-filtro]").forEach(b=>b.onclick=()=>{window._dashFiltro=b.dataset.dashFiltro;render();});
+  // Botão de lançar recorrentes pendentes
+  const bp=document.getElementById("btnLancarPendDash");
+  if(bp)bp.onclick=async()=>{
+    const pend=(recorrentes||[]).filter(r=>r.ativo!==false && !recLancada(r));
+    if(pend.length===0){alert("Nenhuma pendente.");return;}
+    const tot=pend.reduce((s,r)=>s+(+r.valor||0),0);
+    if(!confirm(`Lançar ${pend.length} recorrente(s) pendente(s) neste mês (${fmt(tot)})?\n\nPra recorrentes VARIÁVEIS, o valor pode ser ajustado depois em cada lançamento.`))return;
+    for(const r of pend){
+      let v=+r.valor||0;
+      if(!r.fixo){
+        const inp=prompt(`Valor deste mês para "${r.descricao}":`,v.toFixed(2).replace(".",","));
+        if(inp===null)continue;
+        v=parseFloat(inp.replace(",","."))||v;
+      }
+      await lancarRec(r,v);
+    }
+    await loadAll();
+  };
 }
 function drawAnualCharts(){
   const arr=window._anual||[];
