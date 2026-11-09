@@ -547,9 +547,10 @@ async function loadAll(){
     sb.from("dividas").select("*").order("criado_em",{ascending:false}),
     sb.from("app_credores").select("*"),
     sb.from("divida_baixas").select("*"),
-    sb.from("grupos").select("*").order("nome"),
+    sb.from("grupos").select("*").order("nome").then(r=>r,()=>({data:[],error:true})),
   ]);
   contas=c1.data||[]; cartoes=c2.data||[]; categorias=c3.data||[]; txs=c4.data||[]; recorrentes=c5.data||[]; dividas=c6.data||[]; credores=c7.data||[]; baixas=c8.data||[]; grupos=c9.data||[];
+  if(c9 && c9.error && !window._avisouGrupos){window._avisouGrupos=true;console.warn("Tabela grupos não encontrada — rode supabase_grupos_tabela.sql no Supabase");}
   // AUTO-LANÇAR recorrentes FIXAS do mês atual (sem perguntar)
   await autoLancarFixas();
   render();
@@ -1979,7 +1980,11 @@ function wireConfig(){
     const nome=document.getElementById("gr_nome").value.trim();
     const emoji=document.getElementById("gr_emoji").value.trim()||"📦";
     if(!nome){alert("Nome do grupo?");return;}
-    await ins("grupos",{nome,emoji});
+    const resp=await ins("grupos",{nome,emoji});
+    if(resp && resp.error){
+      alert("❌ Erro ao cadastrar grupo:\n\n"+resp.error.message+"\n\n→ Se diz \"relation grupos does not exist\", você precisa RODAR o SQL supabase_grupos_tabela.sql no Supabase. Essa é a causa 99% das vezes.");
+      return;
+    }
     document.getElementById("gr_nome").value="";
     document.getElementById("gr_emoji").value="📦";
     await loadAll();
