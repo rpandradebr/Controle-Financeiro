@@ -330,6 +330,28 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 .divida-item .acts button:hover{background:var(--accent-soft);color:var(--accent-dark)}
 .divida-item .acts .del-btn:hover{background:var(--danger-soft);color:var(--danger)}
 .divida-notice{background:var(--amber-soft);color:var(--amber);border-radius:11px;padding:11px 14px;font-size:12.5px;line-height:1.5}
+
+.rateio{margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:9px;border:1px solid var(--line)}
+.rateio small{display:block;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:6px}
+.rateio-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px dashed var(--line)}
+.rateio-row:last-child{border-bottom:none}
+.rateio-row b{font-family:'Fraunces',serif;font-weight:500}
+.fab-ia{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(99,102,241,.4);font-size:24px;z-index:50;transition:transform .15s}
+.fab-ia:hover{transform:scale(1.08)}
+.ia-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.ia-modal.hidden{display:none}
+.ia-box{background:var(--card);border-radius:14px;width:100%;max-width:520px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.ia-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.ia-head h3{margin:0;font-size:17px}
+.ia-head button{background:transparent;border:none;cursor:pointer;color:var(--ink-soft);font-size:22px}
+.ia-body{padding:16px 20px;overflow-y:auto;flex:1;min-height:200px;font-size:14px;line-height:1.55;color:var(--ink);white-space:pre-wrap}
+.ia-foot{padding:14px 20px;border-top:1px solid var(--line)}
+.ia-foot textarea{width:100%;min-height:60px;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif;font-size:13.5px;resize:vertical}
+.ia-foot .row{display:flex;gap:8px;margin-top:8px}
+.ia-foot .row button{flex:1;padding:10px;border-radius:9px;font-weight:600;font-size:13.5px;cursor:pointer}
+.ia-foot .ia-send{background:var(--accent);color:#fff;border:none}
+.ia-foot .ia-cancel{background:transparent;border:1px solid var(--line);color:var(--ink-soft)}
+.contador-chip{display:inline-block;background:var(--amber-soft);color:var(--amber);font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;margin-left:8px}
 .pay-toggle{display:flex;gap:6px}
 .pay-toggle button{flex:1;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);font-family:'Manrope';font-weight:600;font-size:13.5px;cursor:pointer;transition:.15s}
 .pay-toggle button.active{background:var(--amber);color:#fff;border-color:var(--amber)}
@@ -398,6 +420,27 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
   </div>
   <div id="content"></div>
   <div class="footer">Dados salvos com segurança no Supabase · cada usuário vê apenas os próprios lançamentos.</div>
+  <button class="fab-ia" id="fabIA" title="Perguntar à IA">💡</button>
+  <div class="ia-modal hidden" id="iaModal">
+    <div class="ia-box">
+      <div class="ia-head"><h3>💡 Pedir análise à IA</h3><button id="iaClose">×</button></div>
+      <div class="ia-body" id="iaBody">Oi! Sou seu assistente financeiro. Posso analisar:
+
+• Como estão seus gastos do mês
+• Onde dá pra economizar
+• Se vale parcelar uma compra agora
+• Simulações (ex: cortando X, quando quita o cartão)
+
+Digita sua pergunta abaixo. Eu olho seus números atuais e respondo.</div>
+      <div class="ia-foot">
+        <textarea id="iaPergunta" placeholder="Digite sua pergunta..."></textarea>
+        <div class="row">
+          <button class="ia-cancel" id="iaCancel">Cancelar</button>
+          <button class="ia-send" id="iaSend">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -558,6 +601,47 @@ function buildDrawerOnce(){
   document.getElementById("backdrop").onclick=closeDrawer;
   document.getElementById("mPrev").onclick=()=>{if(mes===0){mes=11;ano--;}else mes--;render();};
   document.getElementById("mNext").onclick=()=>{if(mes===11){mes=0;ano++;}else mes++;render();};
+  const btnTema=document.getElementById("btnTema");
+  if(btnTema)btnTema.onclick=()=>{const atual=document.documentElement.getAttribute("data-tema")||"claro";aplicaTema(atual==="claro"?"escuro":"claro");};
+  if(typeof initTema==="function")initTema();
+  // IA Modal
+  const fab=document.getElementById("fabIA");
+  const iaModal=document.getElementById("iaModal");
+  const iaBody=document.getElementById("iaBody");
+  const iaPergunta=document.getElementById("iaPergunta");
+  const iaSend=document.getElementById("iaSend");
+  if(fab)fab.onclick=()=>iaModal.classList.remove("hidden");
+  const iaClose=document.getElementById("iaClose");if(iaClose)iaClose.onclick=()=>iaModal.classList.add("hidden");
+  const iaCancel=document.getElementById("iaCancel");if(iaCancel)iaCancel.onclick=()=>iaModal.classList.add("hidden");
+  if(iaSend)iaSend.onclick=async()=>{
+    const q=(iaPergunta.value||"").trim();
+    if(!q){alert("Escreve a pergunta.");return;}
+    iaBody.textContent="⏳ Analisando seus dados...";
+    iaSend.disabled=true;
+    try{
+      const ctx=montarContextoIA();
+      const {data,error}=await sb.functions.invoke("consultar-ia",{body:{pergunta:q,contexto:ctx,aba:view}});
+      if(error)throw error;
+      iaBody.textContent=data?.resposta||"Sem resposta.";
+    }catch(e){
+      iaBody.textContent="❌ "+(e.message||e)+"\n\nA Edge Function \"consultar-ia\" ainda não foi deployada. Me pede o código.";
+    }
+    iaSend.disabled=false;
+    iaPergunta.value="";
+  };
+}
+function montarContextoIA(){
+  try{
+    const ymCur=ymSel();
+    const m=mesMetrics(ymCur);
+    const sa=saldoAte(ymCur);
+    const ch=allCharges();
+    const faturas=cartoes.map(c=>{const comp=ch.filter(x=>x.cartao_id===c.id&&x.competencia===ymCur);const tot=comp.reduce((s,x)=>s+x._valor,0);return {cartao:c.nome,fatura_atual:tot,limite:c.limite||0,uso_pct:c.limite?Math.round(tot/c.limite*100):0};});
+    const recs=(recorrentes||[]).filter(r=>r.ativo!==false).map(r=>({descricao:r.descricao,valor:+r.valor||0,fixo:r.fixo}));
+    let divSaldo=0;
+    try{const myE=(session.user.email||"").toLowerCase();divSaldo=(dividas||[]).filter(d=>statusGeral(d).s!=="paga"&&!d.contestada).reduce((s,d)=>{const sou_credor=(d.credor_email||"").toLowerCase()===myE;return s+(sou_credor?1:-1)*(+d.valor||0);},0);}catch(e){}
+    return {mes:ymCur,saldo_atual:sa,entradas_mes:m.totRec,saidas_mes:m.totDsp+m.totFat,resultado_mes:m.resultado,renda_comprometida_pct:Math.round((m.comp||0)*100),top_categorias:(m.rankGasto||[]).slice(0,5).map(r=>({nome:r.nome,valor:r.valor})),faturas_cartoes:faturas,recorrentes_ativas:recs,saldo_dividas_talita:divSaldo};
+  }catch(e){return {erro:String(e)};}
 }
 function buildDrawerMenu(){
   const credorMode=isCredorMode();
@@ -758,7 +842,7 @@ function viewLancamentos(){
         <button class="btn-add" id="btnLanc">+ Lançar</button>
       </div>
     </div>
-    <div class="card wide"><h3>Lançamentos de ${ymSel()}</h3>${lista.length?`<div class="tx-list">${rows}</div>`:'<div class="empty">Nenhum lançamento neste mês.</div>'}</div>
+    <div class="card wide"><h3>Lançamentos de ${ymSel()} <button class="btn-ghost" id="btnExpCSV" style="float:right;font-size:12px;padding:6px 12px">⬇ Exportar CSV</button></h3>${lista.length?`<div class="tx-list">${rows}</div>`:'<div class="empty">Nenhum lançamento neste mês.</div>'}</div>
   </div>`;
 }
 function viewCartoes(){
@@ -769,11 +853,17 @@ function viewCartoes(){
     const comp=ch.filter(c=>c.cartao_id===card.id&&c.competencia===ymSel());
     const tV=venc.reduce((s,c)=>s+c._valor,0),tC=comp.reduce((s,c)=>s+c._valor,0);
     const uso=card.limite?Math.min(100,tC/card.limite*100):0;
+    // Rateio por pessoa (campo "parte")
+    const rateio={};
+    comp.forEach(c=>{const p=(c.parte||"Eu").trim()||"Eu";rateio[p]=(rateio[p]||0)+c._valor;});
+    const pessoas=Object.entries(rateio).sort((a,b)=>b[1]-a[1]);
+    const rateioHtml=pessoas.length>1?`<div class="rateio"><small>Rateio por pessoa (${comp.length} compras)</small>${pessoas.map(([p,v])=>`<div class="rateio-row"><span>${p}</span><b>${fmt(v)}</b></div>`).join("")}</div>`:(comp.length>0?`<small style="color:var(--ink-soft);font-size:11.5px;display:block;margin-top:8px">${comp.length} compra(s) no mês</small>`:"");
     const items=comp.length?comp.sort((a,b)=>(b.data||"").localeCompare(a.data||"")).map(c=>{const ci=catInfo(c.categoria_id);
-      return `<div class="citem"><span>${ci.emoji}</span><div><b>${c.descricao||ci.nome}</b><small>${brDate(c.data)}${c._n>1?" · "+c._i+"/"+c._n:""}</small></div><b>${fmt(c._valor)}</b></div>`;}).join(""):'<div class="empty">Sem compras no ciclo.</div>';
+      return `<div class="citem"><span>${ci.emoji}</span><div><b>${c.descricao||ci.nome}${c.parte?` <small style="color:var(--ink-soft)">· ${c.parte}</small>`:""}</b><small>${brDate(c.data)}${c._n>1?" · "+c._i+"/"+c._n:""}</small></div><b>${fmt(c._valor)}</b></div>`;}).join(""):'<div class="empty">Sem compras no ciclo.</div>';
     return `<div class="cbox"><div class="chead"><div class="chip">💳</div><div><b>${card.nome}</b><small>fecha dia ${card.fechamento} · vence dia ${card.vencimento}</small></div></div>
       <div class="cstats"><div><small>Fatura que vence em ${ymSel()}</small><b>${fmt(tV)}</b></div><div><small>Compras do ciclo</small><b>${fmt(tC)}</b></div></div>
       ${card.limite?`<div class="prog" style="margin-bottom:4px"><div class="${uso>90?"danger":uso>70?"warn":""}" style="width:${uso}%"></div></div><small style="color:var(--ink-soft);font-size:11px">${uso.toFixed(0)}% de ${fmt(card.limite)}</small>`:""}
+      ${rateioHtml}
       <div class="citems" style="margin-top:10px">${items}</div></div>`;
   }).join("")+'</div>';
 }
@@ -1627,6 +1717,17 @@ function wireLanc(){
     document.getElementById("lblCartao").classList.toggle("hidden",!isCard);
     document.getElementById("lblModo").classList.toggle("hidden",!isCard);
     if(isCard)resetPay(); else document.getElementById("lblParc").classList.add("hidden");
+    // Contador de lançamentos de cartão no mês
+    const h3=document.querySelector(".card h3");
+    if(h3){
+      let chip=document.getElementById("contadorChip");
+      if(chip)chip.remove();
+      if(isCard){
+        const n=allCharges().filter(c=>c.competencia===ymSel()).length;
+        const html=`<span class="contador-chip" id="contadorChip">${n} no mês</span>`;
+        h3.insertAdjacentHTML("beforeend",html);
+      }
+    }
     fillCats();
   });
   document.querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>{
@@ -1648,6 +1749,21 @@ function wireLanc(){
     await loadAll();
   };
   document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("Remover este lançamento?")){await del("transacoes",b.dataset.del);await loadAll();}});
+  const bExp=document.getElementById("btnExpCSV");
+  if(bExp)bExp.onclick=()=>{
+    const ch=allCharges();
+    const diretos=txs.filter(t=>ym(t.data)===ymSel()).map(t=>({data:t.data,tipo:t.tipo,descricao:t.descricao||"",categoria:(catInfo(t.categoria_id)||{}).nome||"",pessoa:t.parte||"",valor:+t.valor||0,onde:t.tipo==="cartao"?((cartoes.find(c=>c.id===t.cartao_id)||{}).nome||""):((contas.find(c=>c.id===t.conta_id)||{}).nome||""),parcelas:t.parcelas||1}));
+    const cart=ch.filter(c=>c.competencia===ymSel()).map(c=>({data:c.data,tipo:"cartao",descricao:(c.descricao||"")+(c._n>1?` (${c._i}/${c._n})`:""),categoria:(catInfo(c.categoria_id)||{}).nome||"",pessoa:c.parte||"",valor:c._valor,onde:(cartoes.find(cc=>cc.id===c.cartao_id)||{}).nome||"",parcelas:c._n}));
+    const todos=[...diretos,...cart].sort((a,b)=>(a.data||"").localeCompare(b.data||""));
+    if(todos.length===0){alert("Sem lançamentos neste mês.");return;}
+    const header="Data;Tipo;Descrição;Categoria;Pessoa;Onde;Parcelas;Valor";
+    const linhas=todos.map(r=>[r.data,r.tipo,r.descricao.replace(/;/g,","),r.categoria.replace(/;/g,","),r.pessoa.replace(/;/g,","),r.onde.replace(/;/g,","),r.parcelas,r.valor.toFixed(2).replace(".",",")].join(";"));
+    const csv="\ufeff"+header+"\n"+linhas.join("\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download="lancamentos_"+ymSel()+".csv";a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),100);
+  };
 }
 async function zerarTudo(){
   const senha=prompt("Digite a senha para zerar TUDO:");
