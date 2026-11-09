@@ -333,6 +333,10 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 
 .tx .edit{background:transparent;border:none;cursor:pointer;color:var(--ink-soft);padding:4px 6px;border-radius:6px;font-size:14px;margin-right:2px}
 .tx .edit:hover{background:var(--amber-soft);color:var(--amber)}
+.gr-badge{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent-dark);margin-left:4px;vertical-align:middle;white-space:nowrap}
+.gr-badge.sem{background:var(--bg);color:var(--ink-soft);border:1px dashed var(--line)}
+.tx.pago-row{opacity:.55}
+.tx.pago-row .val{text-decoration:line-through}
 .rateio{margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:9px;border:1px solid var(--line)}
 .rateio small{display:block;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:6px}
 .rateio-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px dashed var(--line)}
@@ -894,7 +898,8 @@ function viewLancamentos(){
   const cartao=ch.filter(c=>c.competencia===ymSel()).map(c=>({t:c,disp:"cartao",valor:c._valor,id:c.id+"-"+c._i,del:c.id,parc:c._n>1?c._i+"/"+c._n:""}));
   const lista=[...diretos,...cartao].sort((a,b)=>(b.t.data||"").localeCompare(a.t.data||""));
   const rows=lista.map(x=>{const ci=catInfo(x.t.categoria_id);const sign=x.disp==="receita"?"+":"−";
-    return `<div class="tx ${x.disp}"><span class="em">${ci.emoji}</span><div class="mid"><b>${x.t.descricao||ci.nome}${x.parc?` <span class="parc">${x.parc}</span>`:""}</b><small>${brDate(x.t.data)} · ${ci.nome}${x.t.parte?" · "+x.t.parte:""}${x.disp==="cartao"?" · cartão":""}</small></div><b class="val ${x.disp==="receita"?"pos":"neg"}">${sign} ${fmt(x.valor)}</b><button class="edit" data-edit="${x.del}" title="Editar">✏️</button><button class="del" data-del="${x.del}">🗑</button></div>`;}).join("");
+    const grp=(grupos||[]).find(g=>g.id===x.t.grupo_id);const grBadge=grp?`<span class="gr-badge">${grp.emoji||"📦"} ${grp.nome}</span>`:`<span class="gr-badge sem">sem grupo</span>`;const pago=!!x.t.pago;const btnPg=pago?`<button class="edit" data-paid-off="${x.del}" title="Desmarcar pago">↺</button>`:`<button class="edit" data-paid-on="${x.del}" title="Marcar como pago">✓</button>`;
+    return `<div class="tx ${x.disp} ${pago?"pago-row":""}"><span class="em">${ci.emoji}</span><div class="mid"><b>${x.t.descricao||ci.nome}${x.parc?` <span class="parc">${x.parc}</span>`:""} ${grBadge}</b><small>${brDate(x.t.data)} · ${ci.nome}${x.t.parte?" · "+x.t.parte:""}${x.disp==="cartao"?" · cartão":""}${pago&&x.t.data_pagto?" · pago em "+brDate(x.t.data_pagto):""}</small></div><b class="val ${x.disp==="receita"?"pos":"neg"}">${sign} ${fmt(x.valor)}</b>${btnPg}<button class="edit" data-edit="${x.del}" title="Editar">✏️</button><button class="del" data-del="${x.del}">🗑</button></div>`;}).join("");
   return `<div class="grid">
     <div class="card wide"><h3>Novo lançamento</h3>
       <div class="typetabs">
@@ -940,8 +945,13 @@ function viewCartoes(){
     const rateioHtml=pessoas.length>1?`<div class="rateio"><small>Rateio por pessoa (${comp.length} compras)</small>${pessoas.map(([p,v])=>`<div class="rateio-row"><span>${p}</span><b>${fmt(v)}</b></div>`).join("")}</div>`:(comp.length>0?`<small style="color:var(--ink-soft);font-size:11.5px;display:block;margin-top:8px">${comp.length} compra(s) no mês</small>`:"");
     const items=comp.length?comp.sort((a,b)=>(b.data||"").localeCompare(a.data||"")).map(c=>{const ci=catInfo(c.categoria_id);
       return `<div class="citem"><span>${ci.emoji}</span><div><b>${c.descricao||ci.nome}${c.parte?` <small style="color:var(--ink-soft)">· ${c.parte}</small>`:""}</b><small>${brDate(c.data)}${c._n>1?" · "+c._i+"/"+c._n:""}</small></div><b>${fmt(c._valor)}</b></div>`;}).join(""):'<div class="empty">Sem compras no ciclo.</div>';
-    return `<div class="cbox"><div class="chead"><div class="chip">💳</div><div><b>${card.nome}</b><small>fecha dia ${card.fechamento} · vence dia ${card.vencimento}</small></div></div>
-      <div class="cstats"><div><small>Fatura que vence em ${ymSel()}</small><b>${fmt(tV)}</b></div><div><small>Compras do ciclo</small><b>${fmt(tC)}</b></div></div>
+    // status fatura: todas as parcelas que vencem neste mês estão pagas?
+    const vencPagas=venc.filter(c=>{const tx=txs.find(t=>t.id===c.id);return tx&&tx.pago;});
+    const faturaPaga=venc.length>0&&vencPagas.length===venc.length;
+    const btnFat=venc.length>0?(faturaPaga?`<button class="btn-ghost" data-fat-off="${card.id}" style="font-size:12px;padding:6px 12px;float:right">↺ Desfazer baixa</button>`:`<button class="btn-add" data-fat-on="${card.id}" style="font-size:12px;padding:6px 12px;float:right">✓ Dar baixa na fatura</button>`):"";
+    return `<div class="cbox ${faturaPaga?"pago-row":""}"><div class="chead"><div class="chip">💳</div><div><b>${card.nome}${faturaPaga?' <span class="gr-badge">PAGA</span>':""}</b><small>fecha dia ${card.fechamento} · vence dia ${card.vencimento}</small></div></div>
+      <div class="cstats"><div><small>Fatura que vence em ${ymSel()}${faturaPaga?" ✓":""}</small><b>${fmt(tV)}</b></div><div><small>Compras do ciclo</small><b>${fmt(tC)}</b></div></div>
+      ${btnFat}
       ${card.limite?`<div class="prog" style="margin-bottom:4px"><div class="${uso>90?"danger":uso>70?"warn":""}" style="width:${uso}%"></div></div><small style="color:var(--ink-soft);font-size:11px">${uso.toFixed(0)}% de ${fmt(card.limite)}</small>`:""}
       ${rateioHtml}
       <div class="citems" style="margin-top:10px">${items}</div></div>`;
@@ -1794,7 +1804,28 @@ function wire(){
   if(view==="diarios")wireDiarios();
   if(view==="anual")drawAnualCharts();
   if(view==="lancamentos")wireLanc();
-  if(view==="cartoes"){}
+  if(view==="cartoes"){
+    document.querySelectorAll("[data-fat-on]").forEach(b=>b.onclick=async()=>{
+      const cid=b.dataset.fatOn;
+      // encontra todas as transações de cartão com parcelas vencendo em ymSel
+      const ids=new Set();
+      allCharges().filter(c=>c.cartao_id===cid&&c.vencimento===ymSel()).forEach(c=>ids.add(c.id));
+      if(ids.size===0){alert("Sem compras no vencimento.");return;}
+      if(!confirm(`Dar baixa na fatura inteira? ${ids.size} compra(s) serão marcadas como pagas.`))return;
+      for(const id of ids){
+        const r=await upd("transacoes",id,{pago:true,data_pagto:hoje()});
+        if(r&&r.error){alert("Erro: "+r.error.message+"\n\nRode supabase_pago_transacoes.sql no Supabase.");return;}
+      }
+      await loadAll();
+    });
+    document.querySelectorAll("[data-fat-off]").forEach(b=>b.onclick=async()=>{
+      const cid=b.dataset.fatOff;
+      const ids=new Set();
+      allCharges().filter(c=>c.cartao_id===cid&&c.vencimento===ymSel()).forEach(c=>ids.add(c.id));
+      for(const id of ids){await upd("transacoes",id,{pago:false,data_pagto:null});}
+      await loadAll();
+    });
+  }
   if(view==="recorrentes")wireRecorrentes();
   if(view==="dividas")wireDividas();
   if(view==="relatorios")wireRelatorios();
@@ -1856,6 +1887,15 @@ function wireLanc(){
     await loadAll();
   };
   document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("Remover este lançamento?")){await del("transacoes",b.dataset.del);await loadAll();}});
+  document.querySelectorAll("[data-paid-on]").forEach(b=>b.onclick=async()=>{
+    const r=await upd("transacoes",b.dataset.paidOn,{pago:true,data_pagto:hoje()});
+    if(r&&r.error){alert("Erro: "+r.error.message+"\n\nSe menciona coluna pago, rode supabase_pago_transacoes.sql no Supabase.");return;}
+    await loadAll();
+  });
+  document.querySelectorAll("[data-paid-off]").forEach(b=>b.onclick=async()=>{
+    await upd("transacoes",b.dataset.paidOff,{pago:false,data_pagto:null});
+    await loadAll();
+  });
   // Editar lançamento
   document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.edit;
