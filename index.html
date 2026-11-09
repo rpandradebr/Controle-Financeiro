@@ -331,6 +331,8 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
 .divida-item .acts .del-btn:hover{background:var(--danger-soft);color:var(--danger)}
 .divida-notice{background:var(--amber-soft);color:var(--amber);border-radius:11px;padding:11px 14px;font-size:12.5px;line-height:1.5}
 
+.tx .edit{background:transparent;border:none;cursor:pointer;color:var(--ink-soft);padding:4px 6px;border-radius:6px;font-size:14px;margin-right:2px}
+.tx .edit:hover{background:var(--amber-soft);color:var(--amber)}
 .rateio{margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:9px;border:1px solid var(--line)}
 .rateio small{display:block;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:6px}
 .rateio-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px dashed var(--line)}
@@ -421,6 +423,26 @@ input,select{font-family:'Manrope',sans-serif;font-size:14px}
   <div id="content"></div>
   <div class="footer">Dados salvos com segurança no Supabase · cada usuário vê apenas os próprios lançamentos.</div>
   <button class="fab-ia" id="fabIA" title="Perguntar à IA">💡</button>
+  <div class="ia-modal hidden" id="editModal">
+    <div class="ia-box">
+      <div class="ia-head"><h3>✏️ Editar lançamento</h3><button id="editClose">×</button></div>
+      <div class="ia-body" style="padding:20px">
+        <div class="form">
+          <label>Data<input type="date" id="ed_data"></label>
+          <label>Valor (R$)<input type="number" inputmode="decimal" id="ed_valor"></label>
+          <label>Categoria<select id="ed_cat"></select></label>
+          <label>Descrição<input id="ed_desc"></label>
+          <label>Beneficiário/Pagador<input id="ed_parte"></label>
+        </div>
+      </div>
+      <div class="ia-foot">
+        <div class="row">
+          <button class="ia-cancel" id="editCancel">Cancelar</button>
+          <button class="ia-send" id="editSave">Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="ia-modal hidden" id="iaModal">
     <div class="ia-box">
       <div class="ia-head"><h3>💡 Pedir análise à IA</h3><button id="iaClose">×</button></div>
@@ -691,11 +713,13 @@ function render(){
     const parent=document.getElementById("mesLabelTop").parentElement;
     if(parent)parent.firstChild.textContent="Total a receber";
   } else {
-    const sa=saldoAte(ymSel());
-    document.getElementById("saldoTop").textContent=fmt(sa);
-    document.getElementById("saldoTop").className=sa>=0?"pos":"neg";
+    // Resultado APENAS do mês selecionado (não acumulado)
+    const mm=mesMetrics(ymSel());
+    const resultadoMes=mm.totRec-(mm.totDsp+mm.totFat);
+    document.getElementById("saldoTop").textContent=fmt(resultadoMes);
+    document.getElementById("saldoTop").className=resultadoMes>=0?"pos":"neg";
     const parent=document.getElementById("mesLabelTop").parentElement;
-    if(parent && parent.firstChild)parent.firstChild.textContent="Saldo até ";
+    if(parent && parent.firstChild)parent.firstChild.textContent="Resultado de ";
     document.getElementById("mesLabelTop").textContent=MESES_L[mes].toLowerCase();
   }
   const c=document.getElementById("content");
@@ -815,7 +839,7 @@ function viewLancamentos(){
   const cartao=ch.filter(c=>c.competencia===ymSel()).map(c=>({t:c,disp:"cartao",valor:c._valor,id:c.id+"-"+c._i,del:c.id,parc:c._n>1?c._i+"/"+c._n:""}));
   const lista=[...diretos,...cartao].sort((a,b)=>(b.t.data||"").localeCompare(a.t.data||""));
   const rows=lista.map(x=>{const ci=catInfo(x.t.categoria_id);const sign=x.disp==="receita"?"+":"−";
-    return `<div class="tx ${x.disp}"><span class="em">${ci.emoji}</span><div class="mid"><b>${x.t.descricao||ci.nome}${x.parc?` <span class="parc">${x.parc}</span>`:""}</b><small>${brDate(x.t.data)} · ${ci.nome}${x.t.parte?" · "+x.t.parte:""}${x.disp==="cartao"?" · cartão":""}</small></div><b class="val ${x.disp==="receita"?"pos":"neg"}">${sign} ${fmt(x.valor)}</b><button class="del" data-del="${x.del}">🗑</button></div>`;}).join("");
+    return `<div class="tx ${x.disp}"><span class="em">${ci.emoji}</span><div class="mid"><b>${x.t.descricao||ci.nome}${x.parc?` <span class="parc">${x.parc}</span>`:""}</b><small>${brDate(x.t.data)} · ${ci.nome}${x.t.parte?" · "+x.t.parte:""}${x.disp==="cartao"?" · cartão":""}</small></div><b class="val ${x.disp==="receita"?"pos":"neg"}">${sign} ${fmt(x.valor)}</b><button class="edit" data-edit="${x.del}" title="Editar">✏️</button><button class="del" data-del="${x.del}">🗑</button></div>`;}).join("");
   return `<div class="grid">
     <div class="card wide"><h3>Novo lançamento</h3>
       <div class="typetabs">
@@ -1749,6 +1773,35 @@ function wireLanc(){
     await loadAll();
   };
   document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("Remover este lançamento?")){await del("transacoes",b.dataset.del);await loadAll();}});
+  // Editar lançamento
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.edit;
+    const t=txs.find(x=>x.id===id);
+    if(!t){alert("Lançamento não encontrado.");return;}
+    const md=document.getElementById("editModal");
+    document.getElementById("ed_data").value=t.data||"";
+    document.getElementById("ed_valor").value=t.valor||"";
+    document.getElementById("ed_desc").value=t.descricao||"";
+    document.getElementById("ed_parte").value=t.parte||"";
+    const selCat=document.getElementById("ed_cat");
+    const cats=categorias.filter(c=>c.tipo===(t.tipo==="cartao"?"despesa":t.tipo));
+    selCat.innerHTML=cats.map(c=>`<option value="${c.id}" ${c.id===t.categoria_id?"selected":""}>${c.emoji} ${c.nome}</option>`).join("");
+    md.classList.remove("hidden");
+    const closeIt=()=>md.classList.add("hidden");
+    document.getElementById("editClose").onclick=closeIt;
+    document.getElementById("editCancel").onclick=closeIt;
+    document.getElementById("editSave").onclick=async()=>{
+      const upd_data={
+        data:document.getElementById("ed_data").value,
+        valor:parseFloat((document.getElementById("ed_valor").value||"").replace(",",".")) ,
+        categoria_id:document.getElementById("ed_cat").value,
+        descricao:document.getElementById("ed_desc").value,
+        parte:document.getElementById("ed_parte").value
+      };
+      if(!upd_data.valor||upd_data.valor<=0){alert("Valor inválido");return;}
+      try{await upd("transacoes",id,upd_data);closeIt();await loadAll();}catch(e){alert("Erro: "+e.message);}
+    };
+  });
   const bExp=document.getElementById("btnExpCSV");
   if(bExp)bExp.onclick=()=>{
     const ch=allCharges();
