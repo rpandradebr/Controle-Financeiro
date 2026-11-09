@@ -1841,12 +1841,17 @@ function wireLanc(){
     const categoria_id=document.getElementById("f_cat").value;
     if(!valor||!categoria_id){alert("Preencha valor e categoria.");return;}
     const base={tipo:lancTipo,data:document.getElementById("f_data").value,valor,categoria_id,descricao:document.getElementById("f_desc").value,parte:document.getElementById("f_parte").value,grupo_id:document.getElementById("f_grupo").value||null};
+    let resp;
     if(lancTipo==="cartao"){
       const cartao_id=document.getElementById("f_cartao").value;
       if(!cartao_id){alert("Cadastre um cartão em Config.");return;}
       const parcelas=lancPay==="parc"?Math.max(2,parseInt(document.getElementById("f_parc").value||2)):1;
-      await ins("transacoes",{...base,cartao_id,parcelas});
-    } else await ins("transacoes",{...base,conta_id:document.getElementById("f_conta").value});
+      resp=await ins("transacoes",{...base,cartao_id,parcelas});
+    } else resp=await ins("transacoes",{...base,conta_id:document.getElementById("f_conta").value});
+    if(resp && resp.error){
+      alert("Erro ao salvar lançamento:\n\n"+resp.error.message+"\n\nSe menciona coluna 'grupo_id', você precisa rodar o SQL supabase_grupos_tabela.sql no Supabase.");
+      return;
+    }
     await loadAll();
   };
   document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("Remover este lançamento?")){await del("transacoes",b.dataset.del);await loadAll();}});
